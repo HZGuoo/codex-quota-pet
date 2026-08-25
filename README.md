@@ -4,6 +4,10 @@
   <img src="Resources/AppIcon.png" width="128" height="128" alt="Codex Quota Pet 图标">
 </p>
 
+## English summary
+
+Codex Quota Pet is a privacy-first native macOS companion for Codex. It displays subscription quota windows and top-level task states through the local `codex app-server`, with a menu-bar indicator, a draggable desktop quota orb, task notifications, and optional proxy controls. It supports macOS 13+, Apple Silicon and Intel, and never reads or stores authentication tokens. This is an unofficial community project and is not affiliated with or endorsed by OpenAI.
+
 一个原生 macOS 菜单栏额度监控工具，通过本机 `codex app-server` 显示 ChatGPT/Codex 订阅的剩余额度，并提供透明、置顶、可拖动的桌面额度球。
 
 > [!NOTE]
@@ -58,6 +62,13 @@
 - Apple Silicon 或 Intel Mac（默认构建为 arm64 + x86_64 Universal 2 应用）
 - ChatGPT 应用或 Codex CLI，并已使用 ChatGPT 账号登录
 - Swift 6 工具链；正式签名和公证需要完整 Xcode 与 Apple Developer 证书
+
+## 安装
+
+从 [GitHub Releases](https://github.com/HZGuoo/codex-quota-pet/releases/latest) 下载 `CodexQuotaPet-0.1.0-macos-universal.zip`，解压后将 `Codex Quota Pet.app` 拖入“应用程序”文件夹。
+
+> [!WARNING]
+> `v0.1.0` 二进制使用临时签名，尚未经过 Apple 公证。macOS 首次阻止启动时，可在 Finder 中右键应用并选择“打开”；也可以按照下方步骤从源码构建。
 
 ## 构建
 
