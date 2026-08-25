@@ -1,0 +1,16 @@
+.DS_Store
+.build/
+.build-*/
+.swiftpm/
+DerivedData/
+dist/
+*.dmg
+*.xcarchive
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Local signing and notarization material must never be committed.
+*.cer
+*.p12
+*.provisionprofile
+notarytool-profile*
