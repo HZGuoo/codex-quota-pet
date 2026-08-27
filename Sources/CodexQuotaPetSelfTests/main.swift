@@ -141,6 +141,14 @@ struct CodexQuotaPetSelfTests {
             _ = CodexRolloutEventParser.parse(line: approvalOutput, state: &state)
             try expect(state.waitingApprovalCallIDs.isEmpty, "approval result should resume the task")
 
+            let permissionLine = Data(#"{"timestamp":"2026-08-15T01:00:04.600Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"approval-2","input":"const r = await tools.request_permissions({permissions:[{type:\"network\"}]});"}}"#.utf8)
+            let permissionEvent = CodexRolloutEventParser.parse(line: permissionLine, state: &state).first
+            try expect(permissionEvent?.kind == .waitingForApproval, "expected request_permissions approval event")
+            try expect(state.waitingApprovalCallIDs == ["approval-2"], "expected request_permissions waiting state")
+            let permissionOutput = Data(#"{"timestamp":"2026-08-15T01:00:04.700Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"approval-2","output":[]}}"#.utf8)
+            _ = CodexRolloutEventParser.parse(line: permissionOutput, state: &state)
+            try expect(state.waitingApprovalCallIDs.isEmpty, "permission result should resume the task")
+
             let completeLine = Data(#"{"timestamp":"2026-08-15T01:00:05.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-1","completed_at":1786755605}}"#.utf8)
             let completeEvent = CodexRolloutEventParser.parse(line: completeLine, state: &state).first
             try expect(completeEvent?.kind == .completed, "expected completion event")
@@ -305,7 +313,7 @@ struct CodexQuotaPetSelfTests {
             }
             await monitor.start(pollInterval: 60)
 
-            let approval = #"{"timestamp":"2026-08-23T01:00:02.000Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"approval-live","input":"{\"sandbox_permissions\":\"require_escalated\"}"}}"#
+            let approval = #"{"timestamp":"2026-08-23T01:00:02.000Z","type":"response_item","payload":{"type":"custom_tool_call","name":"exec","call_id":"approval-live","input":"const r = await tools.request_permissions({permissions:[{type:\"network\"}]});"}}"#
             let handle = try FileHandle(forWritingTo: rollout)
             try handle.seekToEnd()
             try handle.write(contentsOf: Data((approval + "\n").utf8))
@@ -339,9 +347,25 @@ struct CodexQuotaPetSelfTests {
             settings.proxyMode = .disabled
             try await client.start(settings: settings, executableURL: executable)
             let account = try await client.readAccount(timeoutSeconds: 2)
+            let inventory = try await client.readThreadStatusInventory(timeoutSeconds: 2)
             let snapshot = try await client.readRateLimits(timeoutSeconds: 2)
             let notification = await notificationTask.value
             try expect(account.account == .chatgpt(email: nil, planType: "plus"), "expected ChatGPT account")
+            try expect(inventory.activeByThreadID["thread-running"] == .running, "expected paged running thread")
+            try expect(inventory.activeByThreadID["thread-approval"] == .waitingForApproval, "expected paged approval thread")
+            try expect(inventory.activeByThreadID["thread-child"] == nil, "child thread should not be counted")
+            try expect(
+                inventory.inactiveThreadIDs == ["thread-stale", "thread-idle", "thread-error"],
+                "expected all authoritative inactive states"
+            )
+            let staleRollout = CodexTaskStatusSnapshot(byThreadID: ["thread-stale": .running])
+            try expect(
+                staleRollout.overlaying(
+                    inventory.activeByThreadID,
+                    inactiveThreadIDs: inventory.inactiveThreadIDs
+                ).summary == CodexTaskStatusSummary(runningCount: 1, waitingApprovalCount: 1),
+                "authoritative inventory should suppress stale rollout state"
+            )
             try expect(snapshot.remainingPercent == 60, "expected fake remaining value")
             try expect(notification?.method == "thread/status/changed", "expected full notification method")
             try expect(notification?.params != nil, "expected notification params to be preserved")
@@ -438,8 +462,14 @@ struct CodexQuotaPetSelfTests {
         let accountResponse = respondToRateLimits
             ? #"printf '%s\n' '{"id":2,"result":{"account":{"type":"chatgpt","email":null,"planType":"plus"},"requiresOpenaiAuth":true}}'"#
             : ":"
+        let firstThreadPageResponse = respondToRateLimits
+            ? #"printf '%s\n' '{"id":3,"result":{"data":[{"id":"thread-running","parentThreadId":null,"status":{"type":"active","activeFlags":[]}},{"id":"thread-stale","parentThreadId":null,"status":{"type":"notLoaded"}},{"id":"thread-child","parentThreadId":"thread-running","status":{"type":"active","activeFlags":[]}}],"nextCursor":"page-2"}}'"#
+            : ":"
+        let secondThreadPageResponse = respondToRateLimits
+            ? #"printf '%s\n' '{"id":4,"result":{"data":[{"id":"thread-approval","parentThreadId":null,"status":{"type":"active","activeFlags":["waitingOnApproval"]}},{"id":"thread-idle","parentThreadId":null,"status":{"type":"idle"}},{"id":"thread-error","parentThreadId":null,"status":{"type":"systemError"}}],"nextCursor":null}}'"#
+            : ":"
         let rateLimitResponse = respondToRateLimits
-            ? #"printf '%s\n' '{"id":3,"result":{"rateLimits":{"limitId":"codex","planType":"plus","primary":{"usedPercent":40,"windowDurationMins":10080,"resetsAt":1787200782}}}}'"#
+            ? #"printf '%s\n' '{"id":5,"result":{"rateLimits":{"limitId":"codex","planType":"plus","primary":{"usedPercent":40,"windowDurationMins":10080,"resetsAt":1787200782}}}}'"#
             : ":"
         let contents = """
         #!/bin/sh
@@ -457,6 +487,12 @@ struct CodexQuotaPetSelfTests {
               \(accountResponse)
               ;;
             4)
+              \(firstThreadPageResponse)
+              ;;
+            5)
+              \(secondThreadPageResponse)
+              ;;
+            6)
               \(rateLimitResponse)
               ;;
           esac

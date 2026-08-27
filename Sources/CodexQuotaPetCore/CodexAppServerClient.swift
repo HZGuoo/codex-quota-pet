@@ -187,6 +187,60 @@ public actor CodexAppServerClient {
         return try QuotaSnapshot.decode(from: data)
     }
 
+    public func readThreadStatusInventory(
+        timeoutSeconds: TimeInterval = 10
+    ) async throws -> CodexThreadTaskStatusInventory {
+        var activeByThreadID: [String: CodexTaskLiveState] = [:]
+        var inactiveThreadIDs: Set<String> = []
+        var cursor: String?
+        var seenCursors: Set<String> = []
+
+        repeat {
+            var params: [String: Any] = [
+                "limit": 100,
+                "sortKey": "updated_at",
+                "sortDirection": "desc",
+                "archived": false,
+                "sourceKinds": [
+                    "cli", "vscode", "exec", "appServer", "subAgent",
+                    "subAgentReview", "subAgentCompact", "subAgentThreadSpawn",
+                    "subAgentOther", "unknown"
+                ]
+            ]
+            if let cursor { params["cursor"] = cursor }
+
+            let data = try await request(
+                method: "thread/list",
+                params: params,
+                timeoutSeconds: timeoutSeconds
+            )
+            let page = try CodexAppServerTaskEventParser.statusPage(data)
+
+            for threadID in page.inactiveThreadIDs {
+                activeByThreadID.removeValue(forKey: threadID)
+                inactiveThreadIDs.insert(threadID)
+            }
+            for (threadID, state) in page.activeByThreadID {
+                inactiveThreadIDs.remove(threadID)
+                activeByThreadID[threadID] = state
+            }
+
+            guard let nextCursor = page.nextCursor, !nextCursor.isEmpty else {
+                cursor = nil
+                continue
+            }
+            guard seenCursors.insert(nextCursor).inserted else {
+                throw CodexAppServerError.invalidMessage
+            }
+            cursor = nextCursor
+        } while cursor != nil
+
+        return CodexThreadTaskStatusInventory(
+            activeByThreadID: activeByThreadID,
+            inactiveThreadIDs: inactiveThreadIDs
+        )
+    }
+
     private func request(
         method: String,
         params: [String: Any]?,

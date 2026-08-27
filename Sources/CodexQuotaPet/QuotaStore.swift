@@ -218,6 +218,8 @@ final class QuotaStore: ObservableObject {
                 connected = true
             }
 
+            let taskInventory = try await client.readThreadStatusInventory()
+            applyAppServerTaskStatusInventory(taskInventory)
             let snapshot = try await client.readRateLimits()
             state = .current(snapshot)
             reconnectAttempt = 0
@@ -290,6 +292,12 @@ final class QuotaStore: ObservableObject {
             appServerTaskStatus.removeValue(forKey: update.threadID)
             appServerInactiveThreadIDs.insert(update.threadID)
         }
+        publishMergedTaskStatus()
+    }
+
+    private func applyAppServerTaskStatusInventory(_ inventory: CodexThreadTaskStatusInventory) {
+        appServerTaskStatus = inventory.activeByThreadID
+        appServerInactiveThreadIDs = inventory.inactiveThreadIDs
         publishMergedTaskStatus()
     }
 

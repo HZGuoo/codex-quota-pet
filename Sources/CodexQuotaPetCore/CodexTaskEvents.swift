@@ -117,6 +117,37 @@ public struct CodexThreadTaskStatusUpdate: Sendable, Equatable {
     }
 }
 
+public struct CodexThreadTaskStatusPage: Sendable, Equatable {
+    public let activeByThreadID: [String: CodexTaskLiveState]
+    public let inactiveThreadIDs: Set<String>
+    public let nextCursor: String?
+
+    public init(
+        activeByThreadID: [String: CodexTaskLiveState] = [:],
+        inactiveThreadIDs: Set<String> = [],
+        nextCursor: String? = nil
+    ) {
+        self.activeByThreadID = activeByThreadID
+        self.inactiveThreadIDs = inactiveThreadIDs
+        self.nextCursor = nextCursor
+    }
+}
+
+public struct CodexThreadTaskStatusInventory: Sendable, Equatable {
+    public let activeByThreadID: [String: CodexTaskLiveState]
+    public let inactiveThreadIDs: Set<String>
+
+    public init(
+        activeByThreadID: [String: CodexTaskLiveState] = [:],
+        inactiveThreadIDs: Set<String> = []
+    ) {
+        self.activeByThreadID = activeByThreadID
+        self.inactiveThreadIDs = inactiveThreadIDs
+    }
+
+    public static let empty = CodexThreadTaskStatusInventory()
+}
+
 public struct CodexRolloutParseState: Sendable, Equatable {
     public var threadID: String
     public var currentTurnID: String?
@@ -314,9 +345,10 @@ public enum CodexRolloutEventParser {
     }
 
     private static func requiresApproval(_ arguments: String) -> Bool {
-        let compact = arguments.replacingOccurrences(of: " ", with: "")
+        let compact = arguments.filter { !$0.isWhitespace }
         return compact.contains("\"sandbox_permissions\":\"require_escalated\"")
             || compact.contains("sandbox_permissions=\"require_escalated\"")
+            || compact.contains("tools.request_permissions(")
     }
 
     private static func notificationTitle(from message: String) -> String {
@@ -333,6 +365,45 @@ public enum CodexRolloutEventParser {
 }
 
 public enum CodexAppServerTaskEventParser {
+    public static func statusPage(_ data: Data) throws -> CodexThreadTaskStatusPage {
+        guard let result = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let threads = result["data"] as? [[String: Any]] else {
+            throw CodexAppServerError.invalidMessage
+        }
+
+        var activeByThreadID: [String: CodexTaskLiveState] = [:]
+        var inactiveThreadIDs: Set<String> = []
+
+        for thread in threads {
+            guard let threadID = thread["id"] as? String, !threadID.isEmpty else { continue }
+            if let parentThreadID = thread["parentThreadId"] as? String,
+               !parentThreadID.isEmpty {
+                continue
+            }
+            guard let status = thread["status"] as? [String: Any],
+                  let type = status["type"] as? String else { continue }
+
+            if type == "active" {
+                let flags = status["activeFlags"] as? [String] ?? []
+                if flags.contains("waitingOnApproval") {
+                    activeByThreadID[threadID] = .waitingForApproval
+                } else if flags.contains("waitingOnUserInput") {
+                    activeByThreadID[threadID] = .waitingForInput
+                } else {
+                    activeByThreadID[threadID] = .running
+                }
+            } else if type == "idle" || type == "notLoaded" || type == "systemError" {
+                inactiveThreadIDs.insert(threadID)
+            }
+        }
+
+        return CodexThreadTaskStatusPage(
+            activeByThreadID: activeByThreadID,
+            inactiveThreadIDs: inactiveThreadIDs,
+            nextCursor: result["nextCursor"] as? String
+        )
+    }
+
     public static func statusUpdate(_ notification: CodexNotification) -> CodexThreadTaskStatusUpdate? {
         guard let data = notification.params,
               let params = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {

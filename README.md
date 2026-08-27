@@ -65,10 +65,10 @@ Codex Quota Pet is a privacy-first native macOS companion for Codex. It displays
 
 ## 安装
 
-从 [GitHub Releases](https://github.com/HZGuoo/codex-quota-pet/releases/latest) 下载 `CodexQuotaPet-0.1.0-macos-universal.zip`，解压后将 `Codex Quota Pet.app` 拖入“应用程序”文件夹。
+从 [GitHub Releases](https://github.com/HZGuoo/codex-quota-pet/releases/latest) 下载 `CodexQuotaPet-0.1.1-macos-universal.zip`，解压后将 `Codex Quota Pet.app` 拖入“应用程序”文件夹。
 
 > [!WARNING]
-> `v0.1.0` 二进制使用临时签名，尚未经过 Apple 公证。macOS 首次阻止启动时，可在 Finder 中右键应用并选择“打开”；也可以按照下方步骤从源码构建。
+> `v0.1.1` 二进制使用临时签名，尚未经过 Apple 公证。macOS 首次阻止启动时，可在 Finder 中右键应用并选择“打开”；也可以按照下方步骤从源码构建。
 
 ## 构建
 
