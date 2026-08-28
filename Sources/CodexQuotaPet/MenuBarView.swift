@@ -79,29 +79,8 @@ struct MenuBarView: View {
                 }
                 .font(.caption)
 
-                ForEach(snapshot.buckets) { bucket in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text(bucket.displayName).lineLimit(1)
-                            Spacer()
-                            Text(bucket.remainingPercent.map { "剩余 \($0)%" } ?? "--")
-                                .monospacedDigit()
-                        }
-                        .font(.caption.weight(.medium))
-                        if let window = bucket.limitingWindow {
-                            HStack {
-                                Text(windowDescription(window))
-                                Spacer()
-                                if let reset = window.resetDate {
-                                    Text(reset, style: .relative)
-                                    Text("后重置")
-                                }
-                            }
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        }
-                    }
-                }
+                quotaWindowRow(title: "5 小时额度", window: snapshot.fiveHourWindow)
+                quotaWindowRow(title: "周额度", window: snapshot.weeklyWindow)
 
                 HStack {
                     Text("更新于")
@@ -140,6 +119,25 @@ struct MenuBarView: View {
             }
 
             VStack(spacing: 0) {
+                HStack(spacing: 10) {
+                    Text("额度显示")
+                    Spacer()
+                    Picker("额度显示", selection: Binding(
+                        get: { store.settings.compactQuotaDisplayMode },
+                        set: { value in
+                            store.mutateSettings { $0.compactQuotaDisplayMode = value }
+                        }
+                    )) {
+                        ForEach(CompactQuotaDisplayMode.allCases) { mode in
+                            Text(mode.shortDisplayName).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 176)
+                }
+                .frame(minHeight: 34)
+                Divider()
                 settingToggle(
                     "显示桌面额度球",
                     isOn: Binding(
@@ -220,12 +218,35 @@ struct MenuBarView: View {
         }
     }
 
-    private func windowDescription(_ window: QuotaWindow) -> String {
-        guard let minutes = window.windowDurationMins else { return "已用 \(window.clampedUsedPercent)%" }
-        if minutes % 10_080 == 0 { return "\(minutes / 10_080) 周窗口 · 已用 \(window.clampedUsedPercent)%" }
-        if minutes % 1_440 == 0 { return "\(minutes / 1_440) 天窗口 · 已用 \(window.clampedUsedPercent)%" }
-        if minutes % 60 == 0 { return "\(minutes / 60) 小时窗口 · 已用 \(window.clampedUsedPercent)%" }
-        return "\(minutes) 分钟窗口 · 已用 \(window.clampedUsedPercent)%"
+    private func quotaWindowRow(title: String, window: QuotaWindow?) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.caption.weight(.medium))
+                HStack(spacing: 4) {
+                    Text(window.map { "已用 \($0.clampedUsedPercent)%" } ?? "暂无数据")
+                    if let reset = window?.resetDate {
+                        Text("·")
+                        Text(reset, style: .relative)
+                        Text("后重置")
+                    }
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text(window.map { "剩余 \($0.remainingPercent)%" } ?? "--")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(statusColor(for: window?.remainingPercent))
+                .monospacedDigit()
+        }
+    }
+
+    private func statusColor(for remaining: Int?) -> Color {
+        guard !store.state.isStale, let remaining else { return .gray }
+        if remaining >= 60 { return .green }
+        if remaining >= 30 { return .orange }
+        return .red
     }
 }
 

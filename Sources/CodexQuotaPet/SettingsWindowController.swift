@@ -149,6 +149,12 @@ private struct SettingsView: View {
 
                 Section("桌面额度球") {
                 Toggle("显示额度球", isOn: $draft.showPet)
+                Picker("额度显示", selection: $draft.compactQuotaDisplayMode) {
+                    ForEach(CompactQuotaDisplayMode.allCases) { mode in
+                        Text(mode.shortDisplayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
                 Toggle("保持最前", isOn: $draft.alwaysOnTop)
                 Toggle("鼠标穿透", isOn: $draft.mousePassthrough)
                 Toggle("失去焦点时自动收起", isOn: $draft.collapsePetOnFocusLoss)

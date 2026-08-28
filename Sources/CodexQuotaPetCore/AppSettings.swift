@@ -16,6 +16,30 @@ public enum ProxyMode: String, Codable, CaseIterable, Identifiable, Sendable {
     }
 }
 
+public enum CompactQuotaDisplayMode: String, Codable, CaseIterable, Identifiable, Sendable {
+    case fiveHour
+    case weekly
+    case both
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .fiveHour: "5 小时额度"
+        case .weekly: "周额度"
+        case .both: "同时显示"
+        }
+    }
+
+    public var shortDisplayName: String {
+        switch self {
+        case .fiveHour: "5小时"
+        case .weekly: "1周"
+        case .both: "同时显示"
+        }
+    }
+}
+
 public struct AppSettings: Codable, Equatable, Sendable {
     public static let minimumRefreshInterval = 60
     public static let maximumRefreshInterval = 3_600
@@ -30,6 +54,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var alwaysOnTop: Bool
     public var mousePassthrough: Bool
     public var collapsePetOnFocusLoss: Bool
+    public var compactQuotaDisplayMode: CompactQuotaDisplayMode
     public var launchAtLogin: Bool
     public var customCodexPath: String
     public var taskNotificationsEnabled: Bool
@@ -48,6 +73,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         alwaysOnTop: Bool = true,
         mousePassthrough: Bool = false,
         collapsePetOnFocusLoss: Bool = true,
+        compactQuotaDisplayMode: CompactQuotaDisplayMode = .both,
         launchAtLogin: Bool = false,
         customCodexPath: String = "",
         taskNotificationsEnabled: Bool = true,
@@ -65,6 +91,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.alwaysOnTop = alwaysOnTop
         self.mousePassthrough = mousePassthrough
         self.collapsePetOnFocusLoss = collapsePetOnFocusLoss
+        self.compactQuotaDisplayMode = compactQuotaDisplayMode
         self.launchAtLogin = launchAtLogin
         self.customCodexPath = customCodexPath
         self.taskNotificationsEnabled = taskNotificationsEnabled
@@ -114,6 +141,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case alwaysOnTop
         case mousePassthrough
         case collapsePetOnFocusLoss
+        case compactQuotaDisplayMode
         case launchAtLogin
         case customCodexPath
         case taskNotificationsEnabled
@@ -135,6 +163,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
             alwaysOnTop: try container.decodeIfPresent(Bool.self, forKey: .alwaysOnTop) ?? true,
             mousePassthrough: try container.decodeIfPresent(Bool.self, forKey: .mousePassthrough) ?? false,
             collapsePetOnFocusLoss: try container.decodeIfPresent(Bool.self, forKey: .collapsePetOnFocusLoss) ?? true,
+            compactQuotaDisplayMode: try container.decodeIfPresent(
+                CompactQuotaDisplayMode.self,
+                forKey: .compactQuotaDisplayMode
+            ) ?? .both,
             launchAtLogin: try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false,
             customCodexPath: try container.decodeIfPresent(String.self, forKey: .customCodexPath) ?? "",
             taskNotificationsEnabled: try container.decodeIfPresent(Bool.self, forKey: .taskNotificationsEnabled) ?? true,

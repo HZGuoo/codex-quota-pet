@@ -48,6 +48,9 @@ public struct RateLimitResetCredits: Codable, Equatable, Sendable {
 }
 
 public struct QuotaSnapshot: Equatable, Sendable {
+    public static let fiveHourWindowDurationMins: Int64 = 5 * 60
+    public static let weeklyWindowDurationMins: Int64 = 7 * 24 * 60
+
     public let buckets: [QuotaBucket]
     public let resetCredits: RateLimitResetCredits?
     public let refreshedAt: Date
@@ -66,6 +69,20 @@ public struct QuotaSnapshot: Equatable, Sendable {
         buckets.compactMap(\.planType).first
     }
 
+    /// The most constrained five-hour window across all returned quota buckets.
+    /// Older Codex responses did not include window durations, so primary is used
+    /// as a compatibility fallback only when every window omits duration metadata.
+    public var fiveHourWindow: QuotaWindow? {
+        quotaWindow(durationMins: Self.fiveHourWindowDurationMins, fallback: \.primary)
+    }
+
+    /// The most constrained weekly window across all returned quota buckets.
+    /// Older Codex responses did not include window durations, so secondary is used
+    /// as a compatibility fallback only when every window omits duration metadata.
+    public var weeklyWindow: QuotaWindow? {
+        quotaWindow(durationMins: Self.weeklyWindowDurationMins, fallback: \.secondary)
+    }
+
     public static func decode(from data: Data, refreshedAt: Date = Date()) throws -> QuotaSnapshot {
         let response = try JSONDecoder().decode(GetAccountRateLimitsResponse.self, from: data)
         let buckets: [QuotaBucket]
@@ -82,6 +99,21 @@ public struct QuotaSnapshot: Equatable, Sendable {
             resetCredits: response.rateLimitResetCredits,
             refreshedAt: refreshedAt
         )
+    }
+
+    private func quotaWindow(
+        durationMins: Int64,
+        fallback: KeyPath<QuotaBucket, QuotaWindow?>
+    ) -> QuotaWindow? {
+        let allWindows = buckets.flatMap(\.windows)
+        let matchingWindows = allWindows.filter { $0.windowDurationMins == durationMins }
+        if let mostConstrained = matchingWindows.min(by: { $0.remainingPercent < $1.remainingPercent }) {
+            return mostConstrained
+        }
+
+        guard allWindows.allSatisfy({ $0.windowDurationMins == nil }) else { return nil }
+        return buckets.compactMap { $0[keyPath: fallback] }
+            .min(by: { $0.remainingPercent < $1.remainingPercent })
     }
 }
 

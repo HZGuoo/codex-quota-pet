@@ -17,10 +17,10 @@ struct CodexQuotaPetSelfTests {
         try run("multi-bucket decoding") {
             let data = Data(#"""
             {
-              "rateLimits":{"primary":{"usedPercent":10}},
+              "rateLimits":{"primary":{"usedPercent":10,"windowDurationMins":300}},
               "rateLimitsByLimitId":{
-                "codex":{"limitId":"codex","planType":"plus","primary":{"usedPercent":40},"secondary":{"usedPercent":65}},
-                "other":{"primary":{"usedPercent":20}}
+                "codex":{"limitId":"codex","planType":"plus","primary":{"usedPercent":40,"windowDurationMins":300},"secondary":{"usedPercent":65,"windowDurationMins":10080}},
+                "other":{"primary":{"usedPercent":20,"windowDurationMins":300}}
               },
               "rateLimitResetCredits":{"availableCount":2,"credits":[]}
             }
@@ -28,6 +28,8 @@ struct CodexQuotaPetSelfTests {
             let snapshot = try QuotaSnapshot.decode(from: data)
             try expect(snapshot.buckets.count == 2, "expected two buckets")
             try expect(snapshot.remainingPercent == 35, "expected most constrained remaining value")
+            try expect(snapshot.fiveHourWindow?.remainingPercent == 60, "expected five-hour window")
+            try expect(snapshot.weeklyWindow?.remainingPercent == 35, "expected weekly window")
             try expect(snapshot.planType == "plus", "expected Plus plan")
             try expect(snapshot.resetCredits?.availableCount == 2, "expected reset credits")
         }
@@ -40,6 +42,13 @@ struct CodexQuotaPetSelfTests {
             try expect(snapshot.buckets[0].id == "codex", "expected fallback id")
             try expect(snapshot.buckets[0].primary?.remainingPercent == 0, "expected upper clamp")
             try expect(snapshot.buckets[0].secondary?.remainingPercent == 100, "expected lower clamp")
+            try expect(snapshot.fiveHourWindow?.remainingPercent == 0, "legacy primary should map to five-hour")
+            try expect(snapshot.weeklyWindow?.remainingPercent == 100, "legacy secondary should map to weekly")
+
+            let weeklyOnlyData = Data(#"{"rateLimits":{"primary":{"usedPercent":40,"windowDurationMins":10080}},"rateLimitsByLimitId":null}"#.utf8)
+            let weeklyOnly = try QuotaSnapshot.decode(from: weeklyOnlyData)
+            try expect(weeklyOnly.fiveHourWindow == nil, "weekly window must not be duplicated as five-hour")
+            try expect(weeklyOnly.weeklyWindow?.remainingPercent == 60, "expected duration-based weekly window")
         }
         passed += 1
 
@@ -91,6 +100,15 @@ struct CodexQuotaPetSelfTests {
             try expect(settings.taskNotificationsEnabled, "notifications should default on for legacy settings")
             try expect(settings.notifyTaskCompleted, "completion notification should default on")
             try expect(!settings.privateNotificationContent, "privacy mode should default off")
+            try expect(settings.compactQuotaDisplayMode == .both, "legacy compact display should show both quotas")
+
+            var updated = settings
+            updated.compactQuotaDisplayMode = .weekly
+            let roundTrip = try JSONDecoder().decode(
+                AppSettings.self,
+                from: JSONEncoder().encode(updated)
+            )
+            try expect(roundTrip.compactQuotaDisplayMode == .weekly, "compact display mode should persist")
         }
         passed += 1
 

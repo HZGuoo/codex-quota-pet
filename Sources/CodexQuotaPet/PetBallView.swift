@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import CodexQuotaPetCore
 
@@ -42,12 +43,36 @@ struct PetBallView: View {
                 expanded.toggle()
                 onExpansionChanged(expanded)
             }
+            Menu("额度显示") {
+                compactDisplayModeButton("5小时", mode: .fiveHour)
+                compactDisplayModeButton("1周", mode: .weekly)
+                compactDisplayModeButton("同时显示", mode: .both)
+            }
             Divider()
             Button("鼠标穿透") {
                 store.mutateSettings { $0.mousePassthrough = true }
             }
             Button("隐藏额度球") {
                 store.mutateSettings { $0.showPet = false }
+            }
+            Divider()
+            Button("退出应用", role: .destructive) {
+                NSApplication.shared.terminate(nil)
+            }
+        }
+    }
+
+    private func compactDisplayModeButton(
+        _ title: String,
+        mode: CompactQuotaDisplayMode
+    ) -> some View {
+        Button {
+            store.mutateSettings { $0.compactQuotaDisplayMode = mode }
+        } label: {
+            if store.settings.compactQuotaDisplayMode == mode {
+                Label(title, systemImage: "checkmark")
+            } else {
+                Text(title)
             }
         }
     }
@@ -69,54 +94,172 @@ struct PetBallView: View {
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
+            )
+            Circle()
+                .strokeBorder(
+                    Color.white.opacity(colorScheme == .dark ? 0.18 : 0.58),
+                    lineWidth: 0.6
                 )
-            Circle()
-                .strokeBorder(AuroraStyle.accentPurple.opacity(0.38), lineWidth: 0.8)
-            Circle()
-                .stroke(AuroraStyle.accent.opacity(0.15), lineWidth: 5)
-                .padding(4)
-            if store.remainingPercent == nil || store.state.isStale {
-                Circle()
-                    .trim(from: 0, to: progress)
-                    .stroke(Color.gray, style: StrokeStyle(lineWidth: 5, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                    .padding(4)
-            } else {
-                Circle()
-                    .trim(from: 0, to: progress)
-                    .stroke(
-                        AngularGradient(
-                            colors: [
-                                AuroraStyle.accentBlue,
-                                AuroraStyle.accent,
-                                AuroraStyle.accentPurple,
-                                AuroraStyle.accentBlue
-                            ],
-                            center: .center
-                        ),
-                        style: StrokeStyle(lineWidth: 5, lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(-90))
-                    .padding(4)
-            }
-            VStack(spacing: 0) {
-                Text(percentageText)
-                    .font(.system(size: 16, weight: .bold, design: .rounded))
-                    .foregroundStyle(statusColor)
-                    .monospacedDigit()
-                if store.taskStatus.hasActivity {
-                    compactTaskStatus
-                } else {
-                    Text("Codex")
-                        .font(.system(size: 7.5, weight: .medium, design: .rounded))
-                        .foregroundStyle(AuroraStyle.accent.opacity(0.74))
-                }
-            }
-            .offset(y: 2)
+            compactQuotaRings
+            compactQuotaContent
         }
         .frame(width: Self.compactSize.width, height: Self.compactSize.height)
         .clipShape(Circle())
         .help(petHelpText)
+    }
+
+    @ViewBuilder
+    private var compactQuotaRings: some View {
+        switch store.settings.compactQuotaDisplayMode {
+        case .fiveHour:
+            compactProgressRing(
+                window: store.snapshot?.fiveHourWindow,
+                color: AuroraStyle.accentBlue,
+                lineWidth: 3.25,
+                inset: 4
+            )
+        case .weekly:
+            compactProgressRing(
+                window: store.snapshot?.weeklyWindow,
+                color: AuroraStyle.accentPurple,
+                lineWidth: 3.25,
+                inset: 4
+            )
+        case .both:
+            compactProgressRing(
+                window: store.snapshot?.fiveHourWindow,
+                color: AuroraStyle.accentBlue,
+                lineWidth: 2.5,
+                inset: 3.5
+            )
+            compactProgressRing(
+                window: store.snapshot?.weeklyWindow,
+                color: AuroraStyle.accentPurple,
+                lineWidth: 2.5,
+                inset: 7.5
+            )
+        }
+    }
+
+    private func compactProgressRing(
+        window: QuotaWindow?,
+        color: Color,
+        lineWidth: CGFloat,
+        inset: CGFloat
+    ) -> some View {
+        ZStack {
+            Circle()
+                .stroke(color.opacity(0.12), lineWidth: lineWidth)
+            Circle()
+                .trim(from: 0, to: CGFloat(window?.remainingPercent ?? 0) / 100)
+                .stroke(
+                    store.state.isStale || window == nil
+                        ? AnyShapeStyle(Color.gray)
+                        : AnyShapeStyle(color),
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                )
+                .rotationEffect(.degrees(-90))
+        }
+        .padding(inset)
+    }
+
+    @ViewBuilder
+    private var compactQuotaContent: some View {
+        switch store.settings.compactQuotaDisplayMode {
+        case .fiveHour:
+            compactSingleQuota(
+                title: "5h",
+                window: store.snapshot?.fiveHourWindow,
+                accent: AuroraStyle.accentBlue
+            )
+        case .weekly:
+            compactSingleQuota(
+                title: "7d",
+                window: store.snapshot?.weeklyWindow,
+                accent: AuroraStyle.accentPurple
+            )
+        case .both:
+            VStack(spacing: store.taskStatus.hasActivity ? 0 : 0.75) {
+                compactDualQuota(
+                    label: "5h",
+                    window: store.snapshot?.fiveHourWindow,
+                    accent: AuroraStyle.accentBlue
+                )
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.18))
+                    .frame(width: 26, height: 0.5)
+                compactDualQuota(
+                    label: "7d",
+                    window: store.snapshot?.weeklyWindow,
+                    accent: AuroraStyle.accentPurple
+                )
+                if store.taskStatus.hasActivity {
+                    compactTaskStatus
+                }
+            }
+        }
+    }
+
+    private func compactSingleQuota(title: String, window: QuotaWindow?, accent: Color) -> some View {
+        VStack(spacing: 0) {
+            Text(percentText(for: window))
+                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .foregroundStyle(statusColor(for: window?.remainingPercent))
+                .monospacedDigit()
+            Text(title)
+                .font(.system(size: 7.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(accent)
+            if store.taskStatus.hasActivity {
+                compactTaskStatus
+            }
+        }
+        .offset(y: store.taskStatus.hasActivity ? 1 : 2.5)
+    }
+
+    private func compactDualQuota(label: String, window: QuotaWindow?, accent: Color) -> some View {
+        VStack(spacing: -1) {
+            Text(percentText(for: window))
+                .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                .foregroundStyle(statusColor(for: window?.remainingPercent))
+                .monospacedDigit()
+            Text(label)
+                .font(.system(size: 6.25, weight: .semibold, design: .rounded))
+                .foregroundStyle(accent)
+        }
+        .frame(height: 15.5)
+    }
+
+    private func quotaWindowRow(title: String, window: QuotaWindow?) -> some View {
+        VStack(spacing: 5) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                Text(percentText(for: window))
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundStyle(statusColor(for: window?.remainingPercent))
+                    .monospacedDigit()
+            }
+            ProgressView(value: Double(window?.remainingPercent ?? 0), total: 100)
+                .tint(store.state.isStale || window == nil ? .gray : AuroraStyle.accent)
+            HStack(spacing: 4) {
+                Text(window.map { "已用 \($0.clampedUsedPercent)%" } ?? "暂无数据")
+                Spacer()
+                if let reset = window?.resetDate {
+                    Image(systemName: "clock")
+                    Text(reset, style: .relative)
+                    Text("后重置")
+                }
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(AuroraStyle.accent.opacity(0.055))
+        )
     }
 
     private var expandedCard: some View {
@@ -130,38 +273,17 @@ struct PetBallView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text(percentageText)
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
-                    .foregroundStyle(statusColor)
+                Text("双窗口")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
             }
-            ProgressView(value: Double(store.remainingPercent ?? 0), total: 100)
-                .tint(store.state.isStale ? .gray : AuroraStyle.accent)
+
+            VStack(spacing: 7) {
+                quotaWindowRow(title: "5 小时额度", window: store.snapshot?.fiveHourWindow)
+                quotaWindowRow(title: "周额度", window: store.snapshot?.weeklyWindow)
+            }
 
             expandedTaskStatus
-
-            if let snapshot = store.snapshot {
-                VStack(spacing: 5) {
-                    ForEach(snapshot.buckets.prefix(3)) { bucket in
-                        HStack {
-                            Text(bucket.displayName)
-                                .lineLimit(1)
-                            Spacer()
-                            Text(bucket.remainingPercent.map { "剩余 \($0)%" } ?? "--")
-                                .monospacedDigit()
-                        }
-                        .font(.caption)
-                    }
-                }
-                if let reset = snapshot.limitingBucket?.limitingWindow?.resetDate {
-                    HStack(spacing: 4) {
-                        Image(systemName: "clock")
-                        Text(reset, style: .relative)
-                        Text("后重置 · \(Self.resetTimeFormatter.string(from: reset))")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-            }
 
             HStack(spacing: 6) {
                 Text(store.statusMessage)
@@ -293,31 +415,38 @@ struct PetBallView: View {
     }
 
     private var petHelpText: String {
-        "\(store.statusMessage)\n\(taskStatusAccessibilityText)"
+        let fiveHour = percentText(for: store.snapshot?.fiveHourWindow)
+        let weekly = percentText(for: store.snapshot?.weeklyWindow)
+        return "5 小时剩余 \(fiveHour)，周额度剩余 \(weekly)\n\(store.statusMessage)\n\(taskStatusAccessibilityText)"
     }
 
-    private var progress: CGFloat {
-        CGFloat(store.remainingPercent ?? 0) / 100
+    private var compactRemainingPercent: Int? {
+        let fiveHour = store.snapshot?.fiveHourWindow?.remainingPercent
+        let weekly = store.snapshot?.weeklyWindow?.remainingPercent
+        switch store.settings.compactQuotaDisplayMode {
+        case .fiveHour:
+            return fiveHour
+        case .weekly:
+            return weekly
+        case .both:
+            return [fiveHour, weekly].compactMap { $0 }.min()
+        }
     }
 
-    private var percentageText: String {
-        store.remainingPercent.map { "\($0)%" } ?? "--"
+    private var compactProgress: CGFloat {
+        CGFloat(compactRemainingPercent ?? 0) / 100
     }
 
-    private var statusColor: Color {
-        guard !store.state.isStale, let remaining = store.remainingPercent else { return .gray }
+    private func percentText(for window: QuotaWindow?) -> String {
+        window.map { "\($0.remainingPercent)%" } ?? "--"
+    }
+
+    private func statusColor(for remaining: Int?) -> Color {
+        guard !store.state.isStale, let remaining else { return .gray }
         if remaining >= 60 { return .green }
         if remaining >= 30 { return .orange }
         return .red
     }
-
-    private static let resetTimeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = .autoupdatingCurrent
-        formatter.timeZone = .autoupdatingCurrent
-        formatter.setLocalizedDateFormatFromTemplate("MdHHmm")
-        return formatter
-    }()
 }
 
 private struct TaskStatusChipButtonStyle: ButtonStyle {
