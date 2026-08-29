@@ -11,6 +11,12 @@ public actor CodexRolloutTaskMonitor {
         var parseState: CodexRolloutParseState
     }
 
+    private struct RolloutFile: Sendable {
+        let url: URL
+        let size: UInt64
+        let modifiedAt: Date
+    }
+
     private struct PendingApproval: Sendable {
         let event: CodexTaskEvent
         let fileURL: URL
@@ -22,11 +28,16 @@ public actor CodexRolloutTaskMonitor {
     private let threadStatusContinuation: AsyncStream<CodexTaskStatusSnapshot>.Continuation
     private let sessionsURL: URL
     private var fileStates: [URL: FileState] = [:]
+    private var trackedFileURLs: Set<URL> = []
     private var pollingTask: Task<Void, Never>?
+    private var nextFileDiscoveryAt = Date.distantPast
     private var startedAt = Date.distantFuture
     private var pendingApprovals: [String: PendingApproval] = [:]
     private var lastStatus = CodexTaskStatusSummary.zero
     private var lastThreadStatus = CodexTaskStatusSnapshot.empty
+
+    private static let fileDiscoveryInterval: TimeInterval = 10
+    private static let recentFileGraceInterval: TimeInterval = 10 * 60
 
     public init(sessionsURL: URL? = nil) {
         self.sessionsURL = sessionsURL
@@ -59,7 +70,7 @@ public actor CodexRolloutTaskMonitor {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(max(0.5, pollInterval)))
                 guard !Task.isCancelled else { return }
-                await self?.scan()
+                await self?.scan(forceFileDiscovery: false)
             }
         }
     }
@@ -68,6 +79,8 @@ public actor CodexRolloutTaskMonitor {
         pollingTask?.cancel()
         pollingTask = nil
         fileStates.removeAll()
+        trackedFileURLs.removeAll()
+        nextFileDiscoveryAt = .distantPast
         pendingApprovals.removeAll()
         startedAt = .distantFuture
         lastStatus = .zero
@@ -77,27 +90,38 @@ public actor CodexRolloutTaskMonitor {
     }
 
     public func scanNow() {
-        scan()
+        scan(forceFileDiscovery: true)
     }
 
     private func baselineExistingFiles() {
         fileStates.removeAll()
-        for url in rolloutFiles() {
-            guard let size = fileSize(url) else { continue }
-            fileStates[url] = FileState(
-                offset: size,
-                parseState: bootstrapParseState(for: url, size: size)
+        trackedFileURLs.removeAll()
+        let recentThreshold = Date().addingTimeInterval(-Self.recentFileGraceInterval)
+        for file in rolloutFiles() {
+            let state = FileState(
+                offset: file.size,
+                parseState: bootstrapParseState(for: file.url, size: file.size)
             )
+            fileStates[file.url] = state
+            if state.parseState.isTurnActive || file.modifiedAt >= recentThreshold {
+                trackedFileURLs.insert(file.url)
+            }
         }
+        nextFileDiscoveryAt = Date().addingTimeInterval(Self.fileDiscoveryInterval)
     }
 
-    private func scan() {
-        let files = rolloutFiles()
-        let existingURLs = Set(files)
-        fileStates = fileStates.filter { existingURLs.contains($0.key) }
-        pendingApprovals = pendingApprovals.filter { existingURLs.contains($0.value.fileURL) }
-        for url in files {
-            guard let size = fileSize(url) else { continue }
+    private func scan(forceFileDiscovery: Bool) {
+        if forceFileDiscovery || Date() >= nextFileDiscoveryAt {
+            refreshTrackedFiles()
+        }
+
+        for url in Array(trackedFileURLs) {
+            guard let size = fileSize(url) else {
+                trackedFileURLs.remove(url)
+                fileStates.removeValue(forKey: url)
+                pendingApprovals = pendingApprovals.filter { $0.value.fileURL != url }
+                continue
+            }
             if fileStates[url] == nil {
                 fileStates[url] = FileState(
                     offset: 0,
@@ -108,6 +132,32 @@ public actor CodexRolloutTaskMonitor {
         }
         flushPendingApprovals()
         publishStatus()
+    }
+
+    private func refreshTrackedFiles() {
+        let files = rolloutFiles()
+        let existingURLs = Set(files.map(\.url))
+        fileStates = fileStates.filter { existingURLs.contains($0.key) }
+        pendingApprovals = pendingApprovals.filter { existingURLs.contains($0.value.fileURL) }
+
+        let recentThreshold = Date().addingTimeInterval(-Self.recentFileGraceInterval)
+        var nextTrackedFileURLs: Set<URL> = []
+        for file in files {
+            if fileStates[file.url] == nil {
+                fileStates[file.url] = FileState(
+                    offset: 0,
+                    parseState: CodexRolloutParseState(
+                        threadID: file.url.deletingPathExtension().lastPathComponent
+                    )
+                )
+            }
+            if fileStates[file.url]?.parseState.isTurnActive == true
+                || file.modifiedAt >= recentThreshold {
+                nextTrackedFileURLs.insert(file.url)
+            }
+        }
+        trackedFileURLs = nextTrackedFileURLs
+        nextFileDiscoveryAt = Date().addingTimeInterval(Self.fileDiscoveryInterval)
     }
 
     private func readAppendedData(from url: URL, size: UInt64) {
@@ -186,7 +236,8 @@ public actor CodexRolloutTaskMonitor {
 
     private func publishStatus(force: Bool = false) {
         var byThreadID: [String: CodexTaskLiveState] = [:]
-        for fileState in fileStates.values {
+        for url in trackedFileURLs {
+            guard let fileState = fileStates[url] else { continue }
             let state = fileState.parseState
             guard !state.isSubagent, state.isTurnActive else { continue }
             let liveState: CodexTaskLiveState
@@ -272,18 +323,25 @@ public actor CodexRolloutTaskMonitor {
         }
     }
 
-    private func rolloutFiles() -> [URL] {
+    private func rolloutFiles() -> [RolloutFile] {
         guard let enumerator = FileManager.default.enumerator(
             at: sessionsURL,
-            includingPropertiesForKeys: [.isRegularFileKey],
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey],
             options: [.skipsHiddenFiles, .skipsPackageDescendants]
         ) else { return [] }
 
-        var urls: [URL] = []
+        var files: [RolloutFile] = []
         for case let url as URL in enumerator where url.pathExtension == "jsonl" {
-            urls.append(url)
+            guard let values = try? url.resourceValues(
+                forKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey]
+            ), values.isRegularFile == true,
+               let size = values.fileSize,
+               let modifiedAt = values.contentModificationDate else {
+                continue
+            }
+            files.append(RolloutFile(url: url, size: UInt64(size), modifiedAt: modifiedAt))
         }
-        return urls
+        return files
     }
 
     private func fileSize(_ url: URL) -> UInt64? {

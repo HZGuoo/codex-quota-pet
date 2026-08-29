@@ -58,6 +58,11 @@ public actor CodexAppServerClient {
     private var nextRequestID = 1
     private var generation = 0
 
+    private static let clientVersion: String = {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+            ?? "development"
+    }()
+
     public init() {
         var continuation: AsyncStream<CodexClientEvent>.Continuation!
         self.events = AsyncStream { continuation = $0 }
@@ -130,7 +135,7 @@ public actor CodexAppServerClient {
                 "clientInfo": [
                     "name": "codex_quota_pet",
                     "title": "Codex Quota Pet",
-                    "version": "0.1.0"
+                    "version": Self.clientVersion
                 ]
             ]
             _ = try await request(method: "initialize", params: params, timeoutSeconds: 10)

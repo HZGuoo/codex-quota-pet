@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-29
+
+### Added
+
+- 增加由版本标签触发的 GitHub Actions 发布流程，自动生成 Universal 2 ZIP、SHA-256 校验文件和 GitHub Release。
+
+### Changed
+
+- 使用根目录 `VERSION` 统一 App Bundle、App Server 握手及发布产物的版本号。
+- rollout 日志监控缓存文件状态，高频轮询仅检查活跃或近期更新文件，并降低完整目录扫描频率。
+
 ## [0.2.0] - 2026-08-28
 
 ### Added

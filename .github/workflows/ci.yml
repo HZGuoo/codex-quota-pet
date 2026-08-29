@@ -22,5 +22,12 @@ jobs:
       - name: Show Swift version
         run: swift --version
 
-      - name: Run 14 self-test groups
+      - name: Validate version metadata
+        shell: zsh {0}
+        run: |
+          version=$(tr -d '[:space:]' < VERSION)
+          [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          plutil -lint Resources/Info.plist
+
+      - name: Run self-tests
         run: swift run --disable-sandbox CodexQuotaPetSelfTests

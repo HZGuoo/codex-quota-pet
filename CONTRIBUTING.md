@@ -30,6 +30,8 @@ swift run --disable-sandbox CodexQuotaPetSelfTests
 CODEX_QUOTA_SDKROOT="$(xcrun --sdk macosx --show-sdk-path)" Scripts/build-app.sh
 ```
 
+版本号只在根目录 `VERSION` 中维护。不要直接修改 `Resources/Info.plist` 中的版本占位值；构建和发布脚本会自动写入实际版本与构建号。
+
 ## Pull Request 要求
 
 - PR 只解决一个清晰的问题，并说明用户可见变化。

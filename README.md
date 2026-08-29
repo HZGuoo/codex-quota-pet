@@ -65,10 +65,10 @@ Codex Quota Pet is a privacy-first native macOS companion for Codex. It displays
 
 ## 安装
 
-从 [GitHub Releases](https://github.com/HZGuoo/codex-quota-pet/releases/latest) 下载 `CodexQuotaPet-0.2.0-macos-universal.zip`，解压后将 `Codex Quota Pet.app` 拖入“应用程序”文件夹。
+从 [GitHub Releases](https://github.com/HZGuoo/codex-quota-pet/releases/latest) 下载名称形如 `CodexQuotaPet-<版本>-macos-universal.zip` 的安装包，解压后将 `Codex Quota Pet.app` 拖入“应用程序”文件夹。
 
 > [!WARNING]
-> `v0.2.0` 二进制使用临时签名，尚未经过 Apple 公证。macOS 首次阻止启动时，可在 Finder 中右键应用并选择“打开”；也可以按照下方步骤从源码构建。
+> GitHub Release 二进制使用临时签名，尚未经过 Apple 公证。macOS 首次阻止启动时，可在 Finder 中右键应用并选择“打开”；也可以按照下方步骤从源码构建。
 
 ## 构建
 
@@ -81,6 +81,8 @@ open "dist/Codex Quota Pet.app"
 ```
 
 应用生成在 `dist/Codex Quota Pet.app`。构建脚本分别编译 arm64 与 x86_64 后合并为 Universal 2 应用；本机构建使用临时签名，不需要开发者证书。
+
+项目版本由根目录的 `VERSION` 统一管理；构建脚本会自动写入 App Bundle，并默认使用 Git 提交数量作为构建号。
 
 构建脚本会优先选择已安装的兼容 SDK。遇到 Swift 编译器与 SDK 不匹配时，可以通过 `CODEX_QUOTA_SDKROOT` 指定其他 macOS SDK。
 
@@ -109,6 +111,15 @@ swift run --disable-sandbox CodexQuotaPetSelfTests --dead-proxy
 项目采用 [MIT License](LICENSE)。提交 Issue 或 Pull Request 前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。未公开的安全问题请按照 [SECURITY.md](SECURITY.md) 私密报告，版本变化记录在 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 正式发布
+
+推送与 `VERSION` 一致的标签后，GitHub Actions 会自动构建 Universal 2 ZIP、生成 SHA-256 文件并创建 Latest Release：
+
+```bash
+git tag -a "v$(< VERSION)" -m "Codex Quota Pet v$(< VERSION)"
+git push origin "v$(< VERSION)"
+```
+
+以下流程仅用于拥有 Apple Developer ID 的正式签名和公证发布。
 
 安装完整 Xcode，并预先使用 `xcrun notarytool store-credentials` 创建钥匙串配置，然后运行：
 

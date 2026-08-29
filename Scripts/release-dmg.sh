@@ -4,7 +4,8 @@ set -euo pipefail
 SCRIPT_DIR=${0:A:h}
 PROJECT_DIR=${SCRIPT_DIR:h}
 APP_BUNDLE="$PROJECT_DIR/dist/Codex Quota Pet.app"
-DMG_PATH="$PROJECT_DIR/dist/CodexQuotaPet-0.2.0.dmg"
+TASK_VERSION=$(tr -d '[:space:]' < "$PROJECT_DIR/VERSION")
+DMG_PATH="$PROJECT_DIR/dist/CodexQuotaPet-$TASK_VERSION.dmg"
 
 : "${APPLE_DEVELOPER_ID:?Set APPLE_DEVELOPER_ID to a Developer ID Application identity}"
 : "${NOTARY_PROFILE:?Set NOTARY_PROFILE to an xcrun notarytool keychain profile}"
