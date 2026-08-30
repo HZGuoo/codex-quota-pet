@@ -14,6 +14,7 @@ struct PetBallView: View {
     @Environment(\.colorScheme) private var colorScheme
     let onExpansionChanged: (Bool) -> Void
     @State private var expanded = false
+    @State private var hoveredTokenDay: Date?
 
     var body: some View {
         Group {
@@ -283,6 +284,8 @@ struct PetBallView: View {
                 quotaWindowRow(title: "周额度", window: store.snapshot?.weeklyWindow)
             }
 
+            tokenUsageCard
+
             expandedTaskStatus
 
             HStack(spacing: 6) {
@@ -304,6 +307,260 @@ struct PetBallView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(AuroraStyle.accentPurple.opacity(0.32), lineWidth: 1)
         )
+    }
+
+    @ViewBuilder
+    private var tokenUsageCard: some View {
+        switch store.settings.tokenUsageDisplayMode {
+        case .today:
+            todayTokenUsageCard
+        case .last30Days:
+            recentTokenUsageCard
+        }
+    }
+
+    private var todayTokenUsageCard: some View {
+        let initialized = store.tokenUsage.syncedAt != nil
+        let days = store.tokenUsage.days
+        let usage = store.tokenUsage.usage(on: Date())
+        let total = usage.totalTokens
+        let maximum = max(1, store.tokenUsage.peakDailyTokens)
+        let selectedDay = hoveredTokenDay.flatMap { selected in
+            days.first(where: { $0.day == selected })
+        }
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("当天 Token")
+                        .font(.caption.weight(.semibold))
+                    Text(tokenCloudSyncText)
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: -1) {
+                    Text(initialized ? tokenCountText(total) : "--")
+                        .font(.system(size: 19, weight: .bold, design: .rounded))
+                        .foregroundStyle(AuroraStyle.accentBlue)
+                        .monospacedDigit()
+                    Text("tokens")
+                        .font(.system(size: 8.5))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack {
+                if let selectedDay {
+                    Text("\(tokenDayText(selectedDay.day))  \(tokenCountText(selectedDay.usage.totalTokens))")
+                        .foregroundStyle(AuroraStyle.accentPurple)
+                } else {
+                    Text(todayTokenStatusText(initialized: initialized, total: total))
+                        .foregroundStyle(store.tokenUsageUnavailable ? Color.orange : Color.secondary)
+                }
+                Spacer()
+            }
+            .font(.system(size: 9.5, weight: .medium))
+            .monospacedDigit()
+
+            tokenUsageBars(days: days, maximum: maximum)
+
+            tokenUsageDateAxis(days: days)
+
+            Spacer(minLength: 0)
+        }
+        .padding(9)
+        .frame(height: 142, alignment: .top)
+        .background(tokenCardBackground)
+        .overlay(tokenCardBorder)
+        .onDisappear { hoveredTokenDay = nil }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            initialized
+                ? "当天云端 Token 总量 \(total)"
+                : "正在同步当天云端 Token 使用"
+        )
+    }
+
+    private var recentTokenUsageCard: some View {
+        let days = store.tokenUsage.days
+        let initialized = store.tokenUsage.syncedAt != nil
+        let total = store.tokenUsage.total.totalTokens
+        let maximum = max(1, store.tokenUsage.peakDailyTokens)
+        let selectedDay = hoveredTokenDay.flatMap { selected in
+            days.first(where: { $0.day == selected })
+        }
+
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("最近 30 天 Token")
+                        .font(.caption.weight(.semibold))
+                    Text("Codex 云端每日总量")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: -1) {
+                    Text(initialized ? tokenCountText(total) : "--")
+                        .font(.system(size: 19, weight: .bold, design: .rounded))
+                        .foregroundStyle(AuroraStyle.accentBlue)
+                        .monospacedDigit()
+                    Text("tokens")
+                        .font(.system(size: 8.5))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack {
+                if let selectedDay {
+                    Text("\(tokenDayText(selectedDay.day))  \(tokenCountText(selectedDay.usage.totalTokens))")
+                        .foregroundStyle(AuroraStyle.accentPurple)
+                } else {
+                    Text(recentTokenStatusText(initialized: initialized))
+                        .foregroundStyle(store.tokenUsageUnavailable ? Color.orange : Color.secondary)
+                }
+                Spacer()
+            }
+            .font(.system(size: 9.5, weight: .medium))
+            .monospacedDigit()
+
+            tokenUsageBars(days: days, maximum: maximum)
+
+            tokenUsageDateAxis(days: days)
+
+            HStack {
+                Text("日均 \(initialized ? tokenCountText(store.tokenUsage.averageDailyTokens) : "--")")
+                Spacer()
+                Text("峰值 \(initialized ? tokenCountText(store.tokenUsage.peakDailyTokens) : "--")")
+            }
+            .font(.system(size: 9.5, weight: .medium))
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+        }
+        .padding(9)
+        .frame(height: 142, alignment: .top)
+        .background(tokenCardBackground)
+        .overlay(tokenCardBorder)
+        .onDisappear { hoveredTokenDay = nil }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            initialized
+                ? "最近 30 天 Token 共 \(total)，日均 \(store.tokenUsage.averageDailyTokens)，峰值 \(store.tokenUsage.peakDailyTokens)"
+                : "正在同步最近 30 天云端 Token 使用"
+        )
+    }
+
+    private var tokenCloudSyncText: String {
+        guard let syncedAt = store.tokenUsage.syncedAt else { return "Codex 云端统计" }
+        return "云端同步 · \(syncedAt.formatted(.dateTime.hour().minute()))"
+    }
+
+    private func todayTokenStatusText(initialized: Bool, total: Int64) -> String {
+        if store.tokenUsageUnavailable { return "云端用量暂不可用" }
+        guard initialized else { return "正在同步云端 Token 使用…" }
+        guard let lastDay = store.tokenUsage.lastReportedDay else {
+            return "云端暂时没有用量记录"
+        }
+        if !Calendar.autoupdatingCurrent.isDateInToday(lastDay) {
+            return "云端尚未同步当天用量"
+        }
+        return total == 0 ? "当天暂无 Token 使用记录" : "数据已从 Codex 云端同步"
+    }
+
+    private func recentTokenStatusText(initialized: Bool) -> String {
+        if store.tokenUsageUnavailable { return "云端用量暂不可用" }
+        return initialized ? "悬停柱形查看每天用量" : "正在同步云端 Token 使用…"
+    }
+
+    private func tokenUsageBars(
+        days: [CodexDailyTokenUsage],
+        maximum: Int64
+    ) -> some View {
+        HStack(alignment: .bottom, spacing: 2) {
+            ForEach(days) { day in
+                let isToday = Calendar.autoupdatingCurrent.isDateInToday(day.day)
+                let isHovered = hoveredTokenDay == day.day
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(
+                        isToday || isHovered
+                            ? AuroraStyle.accentPurple
+                            : AuroraStyle.accentBlue.opacity(day.usage.totalTokens > 0 ? 0.88 : 0.15)
+                    )
+                    .frame(maxWidth: .infinity)
+                    .frame(
+                        height: max(
+                            2,
+                            39 * CGFloat(day.usage.totalTokens) / CGFloat(maximum)
+                        )
+                    )
+                    .contentShape(Rectangle())
+                    .onHover { hovering in
+                        if hovering {
+                            hoveredTokenDay = day.day
+                        } else if hoveredTokenDay == day.day {
+                            hoveredTokenDay = nil
+                        }
+                    }
+            }
+        }
+        .frame(height: 39, alignment: .bottom)
+    }
+
+    @ViewBuilder
+    private func tokenUsageDateAxis(days: [CodexDailyTokenUsage]) -> some View {
+        if let first = days.first, let last = days.last {
+            HStack {
+                Text(tokenDayText(first.day))
+                Spacer()
+                Text(tokenDayText(days[days.count / 2].day))
+                Spacer()
+                Text(tokenDayText(last.day))
+            }
+            .font(.system(size: 8.5))
+            .foregroundStyle(.tertiary)
+            .monospacedDigit()
+        }
+    }
+
+    private var tokenCardBackground: some View {
+        RoundedRectangle(cornerRadius: 9, style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: [
+                        AuroraStyle.accentBlue.opacity(0.065),
+                        AuroraStyle.accentPurple.opacity(0.055)
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+    }
+
+    private var tokenCardBorder: some View {
+        RoundedRectangle(cornerRadius: 9, style: .continuous)
+            .strokeBorder(AuroraStyle.accentPurple.opacity(0.16), lineWidth: 0.6)
+    }
+
+    private func tokenCountText(_ count: Int64) -> String {
+        if count >= 1_000_000 {
+            return compactDecimal(Double(count) / 1_000_000, digits: count >= 10_000_000 ? 1 : 2) + "M"
+        }
+        if count >= 1_000 {
+            return compactDecimal(Double(count) / 1_000, digits: 1) + "K"
+        }
+        return "\(count)"
+    }
+
+    private func compactDecimal(_ value: Double, digits: Int) -> String {
+        var text = String(format: "%.*f", locale: Locale(identifier: "en_US_POSIX"), digits, value)
+        while text.contains(".") && text.last == "0" { text.removeLast() }
+        if text.last == "." { text.removeLast() }
+        return text
+    }
+
+    private func tokenDayText(_ date: Date) -> String {
+        date.formatted(.dateTime.month(.defaultDigits).day(.defaultDigits))
     }
 
     private var compactTaskStatus: some View {

@@ -155,6 +155,12 @@ private struct SettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                Picker("Token 使用", selection: $draft.tokenUsageDisplayMode) {
+                    ForEach(TokenUsageDisplayMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
                 Toggle("保持最前", isOn: $draft.alwaysOnTop)
                 Toggle("鼠标穿透", isOn: $draft.mousePassthrough)
                 Toggle("失去焦点时自动收起", isOn: $draft.collapsePetOnFocusLoss)

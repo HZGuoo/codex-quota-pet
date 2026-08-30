@@ -165,6 +165,9 @@ public actor CodexRolloutTaskMonitor {
         if size < state.offset {
             state.offset = 0
             state.pendingData.removeAll()
+            state.parseState = CodexRolloutParseState(
+                threadID: url.deletingPathExtension().lastPathComponent
+            )
         }
         guard size > state.offset,
               let handle = try? FileHandle(forReadingFrom: url) else {

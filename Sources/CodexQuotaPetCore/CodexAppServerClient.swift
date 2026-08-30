@@ -192,6 +192,22 @@ public actor CodexAppServerClient {
         return try QuotaSnapshot.decode(from: data)
     }
 
+    public func readAccountTokenUsage(
+        timeoutSeconds: TimeInterval = 10,
+        calendar: Calendar = .autoupdatingCurrent
+    ) async throws -> CodexTokenUsageSnapshot {
+        let data = try await request(
+            method: "account/usage/read",
+            params: [:],
+            timeoutSeconds: timeoutSeconds
+        )
+        return try CodexTokenUsageSnapshot.decodeCloud(
+            from: data,
+            calendar: calendar,
+            syncedAt: Date()
+        )
+    }
+
     public func readThreadStatusInventory(
         timeoutSeconds: TimeInterval = 10
     ) async throws -> CodexThreadTaskStatusInventory {

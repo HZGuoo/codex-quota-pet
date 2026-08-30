@@ -40,6 +40,20 @@ public enum CompactQuotaDisplayMode: String, Codable, CaseIterable, Identifiable
     }
 }
 
+public enum TokenUsageDisplayMode: String, Codable, CaseIterable, Identifiable, Sendable {
+    case today
+    case last30Days
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .today: "当天"
+        case .last30Days: "最近 30 天"
+        }
+    }
+}
+
 public struct AppSettings: Codable, Equatable, Sendable {
     public static let minimumRefreshInterval = 60
     public static let maximumRefreshInterval = 3_600
@@ -55,6 +69,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var mousePassthrough: Bool
     public var collapsePetOnFocusLoss: Bool
     public var compactQuotaDisplayMode: CompactQuotaDisplayMode
+    public var tokenUsageDisplayMode: TokenUsageDisplayMode
     public var launchAtLogin: Bool
     public var customCodexPath: String
     public var taskNotificationsEnabled: Bool
@@ -74,6 +89,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         mousePassthrough: Bool = false,
         collapsePetOnFocusLoss: Bool = true,
         compactQuotaDisplayMode: CompactQuotaDisplayMode = .both,
+        tokenUsageDisplayMode: TokenUsageDisplayMode = .today,
         launchAtLogin: Bool = false,
         customCodexPath: String = "",
         taskNotificationsEnabled: Bool = true,
@@ -92,6 +108,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.mousePassthrough = mousePassthrough
         self.collapsePetOnFocusLoss = collapsePetOnFocusLoss
         self.compactQuotaDisplayMode = compactQuotaDisplayMode
+        self.tokenUsageDisplayMode = tokenUsageDisplayMode
         self.launchAtLogin = launchAtLogin
         self.customCodexPath = customCodexPath
         self.taskNotificationsEnabled = taskNotificationsEnabled
@@ -142,6 +159,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case mousePassthrough
         case collapsePetOnFocusLoss
         case compactQuotaDisplayMode
+        case tokenUsageDisplayMode
         case launchAtLogin
         case customCodexPath
         case taskNotificationsEnabled
@@ -167,6 +185,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
                 CompactQuotaDisplayMode.self,
                 forKey: .compactQuotaDisplayMode
             ) ?? .both,
+            tokenUsageDisplayMode: try container.decodeIfPresent(
+                TokenUsageDisplayMode.self,
+                forKey: .tokenUsageDisplayMode
+            ) ?? .today,
             launchAtLogin: try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false,
             customCodexPath: try container.decodeIfPresent(String.self, forKey: .customCodexPath) ?? "",
             taskNotificationsEnabled: try container.decodeIfPresent(Bool.self, forKey: .taskNotificationsEnabled) ?? true,

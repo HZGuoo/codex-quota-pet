@@ -12,6 +12,8 @@ final class QuotaStore: ObservableObject {
     @Published private(set) var isRefreshing = false
     @Published private(set) var settingsMessage: String?
     @Published private(set) var taskStatus = CodexTaskStatusSummary.zero
+    @Published private(set) var tokenUsage = CodexTokenUsageSnapshot.empty
+    @Published private(set) var tokenUsageUnavailable = false
 
     private let client = CodexAppServerClient()
     private let taskMonitor = CodexRolloutTaskMonitor()
@@ -118,6 +120,8 @@ final class QuotaStore: ObservableObject {
         appServerTaskStatus.removeAll()
         appServerInactiveThreadIDs.removeAll()
         taskStatus = .zero
+        tokenUsage = .empty
+        tokenUsageUnavailable = false
         Task { await client.stop() }
         Task { await taskMonitor.stop() }
     }
@@ -170,6 +174,8 @@ final class QuotaStore: ObservableObject {
             connected = false
             reconnectAttempt = 0
             clearAppServerTaskStatus()
+            tokenUsage = .empty
+            tokenUsageUnavailable = false
             Task { [weak self] in
                 guard let self else { return }
                 await client.stop()
@@ -222,6 +228,14 @@ final class QuotaStore: ObservableObject {
             applyAppServerTaskStatusInventory(taskInventory)
             let snapshot = try await client.readRateLimits()
             state = .current(snapshot)
+            do {
+                tokenUsage = try await client.readAccountTokenUsage()
+                tokenUsageUnavailable = false
+            } catch is CancellationError {
+                return
+            } catch {
+                tokenUsageUnavailable = true
+            }
             reconnectAttempt = 0
             reconnectTask?.cancel()
             reconnectTask = nil
@@ -229,6 +243,7 @@ final class QuotaStore: ObservableObject {
             return
         } catch {
             connected = await client.isRunning
+            tokenUsageUnavailable = true
             markFailure(error.localizedDescription)
             if !connected { scheduleReconnect() }
         }
@@ -254,6 +269,7 @@ final class QuotaStore: ObservableObject {
         case let .terminated(message):
             connected = false
             clearAppServerTaskStatus()
+            tokenUsageUnavailable = true
             markFailure(message ?? "Codex app-server 已退出")
             scheduleReconnect()
         }

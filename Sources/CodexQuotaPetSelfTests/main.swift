@@ -101,14 +101,43 @@ struct CodexQuotaPetSelfTests {
             try expect(settings.notifyTaskCompleted, "completion notification should default on")
             try expect(!settings.privateNotificationContent, "privacy mode should default off")
             try expect(settings.compactQuotaDisplayMode == .both, "legacy compact display should show both quotas")
+            try expect(settings.tokenUsageDisplayMode == .today, "legacy settings should default to today's token usage")
 
             var updated = settings
             updated.compactQuotaDisplayMode = .weekly
+            updated.tokenUsageDisplayMode = .last30Days
             let roundTrip = try JSONDecoder().decode(
                 AppSettings.self,
                 from: JSONEncoder().encode(updated)
             )
             try expect(roundTrip.compactQuotaDisplayMode == .weekly, "compact display mode should persist")
+            try expect(roundTrip.tokenUsageDisplayMode == .last30Days, "token display mode should persist")
+        }
+        passed += 1
+
+        try run("cloud token usage parsing and aggregation") {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(secondsFromGMT: 8 * 60 * 60)!
+            let syncedAt = calendar.date(from: DateComponents(
+                year: 2026, month: 8, day: 30, hour: 12
+            ))!
+            let data = Data(#"{"dailyUsageBuckets":[{"startDate":"2026-08-29","tokens":55},{"startDate":"2026-08-30","tokens":120}],"summary":{"lifetimeTokens":175}}"#.utf8)
+            let snapshot = try CodexTokenUsageSnapshot.decodeCloud(
+                from: data,
+                calendar: calendar,
+                syncedAt: syncedAt
+            )
+            try expect(snapshot.days.count == 30, "expected a complete 30-day range")
+            try expect(snapshot.total.totalTokens == 175, "expected cloud token total")
+            try expect(snapshot.usage(on: syncedAt, calendar: calendar).totalTokens == 120, "expected today's cloud total")
+            try expect(snapshot.total.inputTokens == 0, "cloud account usage has no input breakdown")
+            try expect(snapshot.total.outputTokens == 0, "cloud account usage has no output breakdown")
+            try expect(snapshot.averageDailyTokens == 5, "expected 30-day daily average")
+            try expect(snapshot.peakDailyTokens == 120, "expected daily peak")
+            try expect(
+                snapshot.lastReportedDay.map { calendar.isDate($0, inSameDayAs: syncedAt) } == true,
+                "expected latest cloud bucket date"
+            )
         }
         passed += 1
 
