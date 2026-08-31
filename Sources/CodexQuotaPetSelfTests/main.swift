@@ -141,6 +141,23 @@ struct CodexQuotaPetSelfTests {
         }
         passed += 1
 
+        try run("local token usage event parsing") {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(secondsFromGMT: 8 * 60 * 60)!
+            let line = Data(#"{"timestamp":"2026-08-30T00:30:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":999,"output_tokens":99,"total_tokens":1098},"last_token_usage":{"input_tokens":100,"output_tokens":20,"total_tokens":120}}}}"#.utf8)
+            let event = CodexLocalTokenUsageParser.parse(line: line)
+            try expect(event?.lastUsage.inputTokens == 100, "expected latest input usage")
+            try expect(event?.lastUsage.outputTokens == 20, "expected latest output usage")
+            try expect(event?.lastUsage.totalTokens == 120, "expected latest total usage")
+            try expect(event?.cumulativeUsage.totalTokens == 1098, "expected cumulative usage")
+            let expectedDay = calendar.date(from: DateComponents(year: 2026, month: 8, day: 30))!
+            try expect(
+                event.map { calendar.isDate($0.occurredAt, inSameDayAs: expectedDay) } == true,
+                "expected token usage to use the local calendar day"
+            )
+        }
+        passed += 1
+
         try run("Codex conversation deep links") {
             let plain = CodexDeepLink.conversationURL(threadID: "  thread-123_abc  ")
             try expect(
@@ -286,6 +303,44 @@ struct CodexQuotaPetSelfTests {
             let event = await collector.value
             try expect(event?.turnID == "new-turn", "monitor should ignore baseline completion")
             try expect(event?.title == "测试新增状态", "monitor should use the latest prompt")
+            await monitor.stop()
+        }
+        passed += 1
+
+        try await runAsync("rollout monitor aggregates today's local token usage") {
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let rollout = directory.appendingPathComponent("rollout-token-usage.jsonl")
+            let timestampFormatter = ISO8601DateFormatter()
+            timestampFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let timestamp = timestampFormatter.string(from: Date())
+            let baseline = #"{"timestamp":"\#(timestamp)","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"output_tokens":20,"total_tokens":120},"last_token_usage":{"input_tokens":100,"output_tokens":20,"total_tokens":120}}}}"#
+            try (baseline + "\n").write(to: rollout, atomically: true, encoding: .utf8)
+
+            let monitor = CodexRolloutTaskMonitor(sessionsURL: directory)
+            let collector = Task<[CodexTokenUsage], Never> {
+                var values: [CodexTokenUsage] = []
+                for await usage in monitor.localTodayTokenUsageUpdates {
+                    values.append(usage)
+                    if values.count == 2 { return values }
+                }
+                return values
+            }
+            await monitor.start(pollInterval: 60)
+
+            let appended = #"{"timestamp":"\#(timestamp)","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":140,"output_tokens":35,"total_tokens":175},"last_token_usage":{"input_tokens":40,"output_tokens":15,"total_tokens":55}}}}"#
+            let handle = try FileHandle(forWritingTo: rollout)
+            try handle.seekToEnd()
+            try handle.write(contentsOf: Data((appended + "\n").utf8))
+            try handle.close()
+            await monitor.scanNow()
+
+            let values = await collector.value
+            try expect(values.first?.totalTokens == 120, "expected baseline local token usage")
+            try expect(values.last?.inputTokens == 140, "expected appended input usage")
+            try expect(values.last?.outputTokens == 35, "expected appended output usage")
+            try expect(values.last?.totalTokens == 175, "expected appended total usage")
             await monitor.stop()
         }
         passed += 1

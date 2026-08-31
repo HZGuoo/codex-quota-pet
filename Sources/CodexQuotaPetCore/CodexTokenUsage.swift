@@ -22,6 +22,76 @@ public struct CodexTokenUsage: Sendable, Equatable {
     }
 }
 
+public struct CodexLocalTokenUsageEvent: Sendable, Equatable {
+    public let occurredAt: Date
+    public let cumulativeUsage: CodexTokenUsage
+    public let lastUsage: CodexTokenUsage
+
+    public init(
+        occurredAt: Date,
+        cumulativeUsage: CodexTokenUsage,
+        lastUsage: CodexTokenUsage
+    ) {
+        self.occurredAt = occurredAt
+        self.cumulativeUsage = cumulativeUsage
+        self.lastUsage = lastUsage
+    }
+}
+
+public enum CodexLocalTokenUsageParser {
+    private static let marker = Data("\"token_count\"".utf8)
+
+    public static func parse(line: Data) -> CodexLocalTokenUsageEvent? {
+        guard line.range(of: marker) != nil,
+              let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+              object["type"] as? String == "event_msg",
+              let payload = object["payload"] as? [String: Any],
+              payload["type"] as? String == "token_count",
+              let info = payload["info"] as? [String: Any],
+              let cumulative = info["total_token_usage"] as? [String: Any],
+              let last = info["last_token_usage"] as? [String: Any],
+              let timestamp = object["timestamp"] as? String,
+              let occurredAt = parseTimestamp(timestamp)
+        else {
+            return nil
+        }
+
+        let cumulativeUsage = tokenUsage(cumulative)
+        let lastUsage = tokenUsage(last)
+        guard cumulativeUsage.totalTokens > 0 || lastUsage.totalTokens > 0 else { return nil }
+
+        return CodexLocalTokenUsageEvent(
+            occurredAt: occurredAt,
+            cumulativeUsage: cumulativeUsage,
+            lastUsage: lastUsage
+        )
+    }
+
+    private static func tokenUsage(_ object: [String: Any]) -> CodexTokenUsage {
+        let input = integer(object["input_tokens"])
+        let output = integer(object["output_tokens"])
+        let total = integer(object["total_tokens"])
+        return CodexTokenUsage(
+            inputTokens: input,
+            outputTokens: output,
+            totalTokens: total > 0 ? total : nil
+        )
+    }
+
+    private static func integer(_ value: Any?) -> Int64 {
+        if let number = value as? NSNumber { return max(0, number.int64Value) }
+        if let string = value as? String, let number = Int64(string) { return max(0, number) }
+        return 0
+    }
+
+    private static func parseTimestamp(_ value: String) -> Date? {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: value) { return date }
+        return ISO8601DateFormatter().date(from: value)
+    }
+}
+
 public struct CodexDailyTokenUsage: Sendable, Equatable, Identifiable {
     public let day: Date
     public let usage: CodexTokenUsage

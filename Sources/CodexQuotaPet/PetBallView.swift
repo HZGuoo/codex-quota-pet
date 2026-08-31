@@ -320,10 +320,9 @@ struct PetBallView: View {
     }
 
     private var todayTokenUsageCard: some View {
-        let initialized = store.tokenUsage.syncedAt != nil
+        let initialized = store.localTodayTokenUsageInitialized
         let days = store.tokenUsage.days
-        let usage = store.tokenUsage.usage(on: Date())
-        let total = usage.totalTokens
+        let total = store.localTodayTokenUsage.totalTokens
         let maximum = max(1, store.tokenUsage.peakDailyTokens)
         let selectedDay = hoveredTokenDay.flatMap { selected in
             days.first(where: { $0.day == selected })
@@ -334,7 +333,7 @@ struct PetBallView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("当天 Token")
                         .font(.caption.weight(.semibold))
-                    Text(tokenCloudSyncText)
+                    Text("本地实时 · 00:00 至今")
                         .font(.system(size: 9.5))
                         .foregroundStyle(.secondary)
                 }
@@ -352,7 +351,7 @@ struct PetBallView: View {
 
             HStack {
                 if let selectedDay {
-                    Text("\(tokenDayText(selectedDay.day))  \(tokenCountText(selectedDay.usage.totalTokens))")
+                    Text("云端 \(tokenDayText(selectedDay.day))  \(tokenCountText(selectedDay.usage.totalTokens))")
                         .foregroundStyle(AuroraStyle.accentPurple)
                 } else {
                     Text(todayTokenStatusText(initialized: initialized, total: total))
@@ -377,8 +376,8 @@ struct PetBallView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             initialized
-                ? "当天云端 Token 总量 \(total)"
-                : "正在同步当天云端 Token 使用"
+                ? "当天本地实时 Token 总量 \(total)，图表为云端最近 30 天用量"
+                : "正在读取当天本地 Token 使用"
         )
     }
 
@@ -451,21 +450,19 @@ struct PetBallView: View {
         )
     }
 
-    private var tokenCloudSyncText: String {
-        guard let syncedAt = store.tokenUsage.syncedAt else { return "Codex 云端统计" }
-        return "云端同步 · \(syncedAt.formatted(.dateTime.hour().minute()))"
-    }
-
     private func todayTokenStatusText(initialized: Bool, total: Int64) -> String {
-        if store.tokenUsageUnavailable { return "云端用量暂不可用" }
-        guard initialized else { return "正在同步云端 Token 使用…" }
-        guard let lastDay = store.tokenUsage.lastReportedDay else {
-            return "云端暂时没有用量记录"
+        guard initialized else { return "正在读取本地 Token 使用…" }
+        if store.tokenUsageUnavailable {
+            return total == 0
+                ? "当天暂无本地使用 · 云端图表不可用"
+                : "当天本地实时 · 云端图表暂不可用"
         }
-        if !Calendar.autoupdatingCurrent.isDateInToday(lastDay) {
-            return "云端尚未同步当天用量"
+        guard store.tokenUsage.syncedAt != nil else {
+            return "当天本地实时 · 正在同步云端图表…"
         }
-        return total == 0 ? "当天暂无 Token 使用记录" : "数据已从 Codex 云端同步"
+        return total == 0
+            ? "当天暂无本地使用 · 图表为云端近 30 天"
+            : "当天本地实时 · 图表为云端近 30 天"
     }
 
     private func recentTokenStatusText(initialized: Bool) -> String {

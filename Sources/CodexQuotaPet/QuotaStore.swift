@@ -14,6 +14,8 @@ final class QuotaStore: ObservableObject {
     @Published private(set) var taskStatus = CodexTaskStatusSummary.zero
     @Published private(set) var tokenUsage = CodexTokenUsageSnapshot.empty
     @Published private(set) var tokenUsageUnavailable = false
+    @Published private(set) var localTodayTokenUsage = CodexTokenUsage.zero
+    @Published private(set) var localTodayTokenUsageInitialized = false
 
     private let client = CodexAppServerClient()
     private let taskMonitor = CodexRolloutTaskMonitor()
@@ -25,6 +27,7 @@ final class QuotaStore: ObservableObject {
     private var notificationRefreshTask: Task<Void, Never>?
     private var taskEventTask: Task<Void, Never>?
     private var taskStatusTask: Task<Void, Never>?
+    private var localTokenUsageTask: Task<Void, Never>?
     private var reconnectAttempt = 0
     private var seenTaskEvents: [String: Date] = [:]
     private var rolloutTaskStatus = CodexTaskStatusSnapshot.empty
@@ -102,6 +105,14 @@ final class QuotaStore: ObservableObject {
                 self.publishMergedTaskStatus()
             }
         }
+        localTokenUsageTask = Task { [weak self] in
+            guard let self else { return }
+            for await usage in taskMonitor.localTodayTokenUsageUpdates {
+                guard !Task.isCancelled else { return }
+                self.localTodayTokenUsage = usage
+                self.localTodayTokenUsageInitialized = true
+            }
+        }
         Task { await taskMonitor.start() }
         updateTaskMonitoring()
         restartPolling()
@@ -116,12 +127,15 @@ final class QuotaStore: ObservableObject {
         notificationRefreshTask?.cancel()
         taskEventTask?.cancel()
         taskStatusTask?.cancel()
+        localTokenUsageTask?.cancel()
         rolloutTaskStatus = .empty
         appServerTaskStatus.removeAll()
         appServerInactiveThreadIDs.removeAll()
         taskStatus = .zero
         tokenUsage = .empty
         tokenUsageUnavailable = false
+        localTodayTokenUsage = .zero
+        localTodayTokenUsageInitialized = false
         Task { await client.stop() }
         Task { await taskMonitor.stop() }
     }

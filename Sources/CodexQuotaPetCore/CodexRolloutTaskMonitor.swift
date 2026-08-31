@@ -4,11 +4,14 @@ public actor CodexRolloutTaskMonitor {
     public nonisolated let events: AsyncStream<CodexTaskEvent>
     public nonisolated let statusUpdates: AsyncStream<CodexTaskStatusSummary>
     public nonisolated let threadStatusUpdates: AsyncStream<CodexTaskStatusSnapshot>
+    public nonisolated let localTodayTokenUsageUpdates: AsyncStream<CodexTokenUsage>
 
     private struct FileState: Sendable {
         var offset: UInt64
         var pendingData = Data()
         var parseState: CodexRolloutParseState
+        var todayUsage = CodexTokenUsage.zero
+        var lastCumulativeUsage: CodexTokenUsage?
     }
 
     private struct RolloutFile: Sendable {
@@ -23,10 +26,17 @@ public actor CodexRolloutTaskMonitor {
         let deliverAfter: Date
     }
 
+    private struct LocalTokenFileState: Sendable {
+        var todayUsage = CodexTokenUsage.zero
+        var lastCumulativeUsage: CodexTokenUsage?
+    }
+
     private let continuation: AsyncStream<CodexTaskEvent>.Continuation
     private let statusContinuation: AsyncStream<CodexTaskStatusSummary>.Continuation
     private let threadStatusContinuation: AsyncStream<CodexTaskStatusSnapshot>.Continuation
+    private let localTokenUsageContinuation: AsyncStream<CodexTokenUsage>.Continuation
     private let sessionsURL: URL
+    private let calendar: Calendar
     private var fileStates: [URL: FileState] = [:]
     private var trackedFileURLs: Set<URL> = []
     private var pollingTask: Task<Void, Never>?
@@ -35,14 +45,22 @@ public actor CodexRolloutTaskMonitor {
     private var pendingApprovals: [String: PendingApproval] = [:]
     private var lastStatus = CodexTaskStatusSummary.zero
     private var lastThreadStatus = CodexTaskStatusSnapshot.empty
+    private var usageDay: Date
+    private var lastLocalTodayUsage = CodexTokenUsage.zero
 
     private static let fileDiscoveryInterval: TimeInterval = 10
     private static let recentFileGraceInterval: TimeInterval = 10 * 60
+    private static let tokenReadChunkSize = 1024 * 1024
 
-    public init(sessionsURL: URL? = nil) {
+    public init(
+        sessionsURL: URL? = nil,
+        calendar: Calendar = .autoupdatingCurrent
+    ) {
         self.sessionsURL = sessionsURL
             ?? FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent(".codex/sessions", isDirectory: true)
+        self.calendar = calendar
+        self.usageDay = calendar.startOfDay(for: Date())
         var eventContinuation: AsyncStream<CodexTaskEvent>.Continuation!
         self.events = AsyncStream { eventContinuation = $0 }
         self.continuation = eventContinuation
@@ -52,12 +70,16 @@ public actor CodexRolloutTaskMonitor {
         var threadStatusContinuation: AsyncStream<CodexTaskStatusSnapshot>.Continuation!
         self.threadStatusUpdates = AsyncStream { threadStatusContinuation = $0 }
         self.threadStatusContinuation = threadStatusContinuation
+        var localTokenUsageContinuation: AsyncStream<CodexTokenUsage>.Continuation!
+        self.localTodayTokenUsageUpdates = AsyncStream { localTokenUsageContinuation = $0 }
+        self.localTokenUsageContinuation = localTokenUsageContinuation
     }
 
     deinit {
         continuation.finish()
         statusContinuation.finish()
         threadStatusContinuation.finish()
+        localTokenUsageContinuation.finish()
         pollingTask?.cancel()
     }
 
@@ -66,6 +88,7 @@ public actor CodexRolloutTaskMonitor {
         startedAt = Date()
         baselineExistingFiles()
         publishStatus(force: true)
+        publishLocalTodayTokenUsage(force: true)
         pollingTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(max(0.5, pollInterval)))
@@ -85,8 +108,11 @@ public actor CodexRolloutTaskMonitor {
         startedAt = .distantFuture
         lastStatus = .zero
         lastThreadStatus = .empty
+        usageDay = calendar.startOfDay(for: Date())
+        lastLocalTodayUsage = .zero
         statusContinuation.yield(.zero)
         threadStatusContinuation.yield(.empty)
+        localTokenUsageContinuation.yield(.zero)
     }
 
     public func scanNow() {
@@ -98,9 +124,15 @@ public actor CodexRolloutTaskMonitor {
         trackedFileURLs.removeAll()
         let recentThreshold = Date().addingTimeInterval(-Self.recentFileGraceInterval)
         for file in rolloutFiles() {
+            let parseState = bootstrapParseState(for: file.url, size: file.size)
+            let tokenState = file.modifiedAt >= usageDay
+                ? bootstrapTodayTokenUsage(for: file.url)
+                : LocalTokenFileState()
             let state = FileState(
                 offset: file.size,
-                parseState: bootstrapParseState(for: file.url, size: file.size)
+                parseState: parseState,
+                todayUsage: tokenState.todayUsage,
+                lastCumulativeUsage: tokenState.lastCumulativeUsage
             )
             fileStates[file.url] = state
             if state.parseState.isTurnActive || file.modifiedAt >= recentThreshold {
@@ -111,6 +143,15 @@ public actor CodexRolloutTaskMonitor {
     }
 
     private func scan(forceFileDiscovery: Bool) {
+        let currentDay = calendar.startOfDay(for: Date())
+        let didChangeUsageDay = !calendar.isDate(currentDay, inSameDayAs: usageDay)
+        if didChangeUsageDay {
+            usageDay = currentDay
+            for url in fileStates.keys {
+                fileStates[url]?.todayUsage = .zero
+            }
+        }
+
         if forceFileDiscovery || Date() >= nextFileDiscoveryAt {
             refreshTrackedFiles()
         }
@@ -130,8 +171,12 @@ public actor CodexRolloutTaskMonitor {
             }
             readAppendedData(from: url, size: size)
         }
+        if didChangeUsageDay {
+            recomputeTodayTokenUsage()
+        }
         flushPendingApprovals()
         publishStatus()
+        publishLocalTodayTokenUsage()
     }
 
     private func refreshTrackedFiles() {
@@ -168,6 +213,8 @@ public actor CodexRolloutTaskMonitor {
             state.parseState = CodexRolloutParseState(
                 threadID: url.deletingPathExtension().lastPathComponent
             )
+            state.todayUsage = .zero
+            state.lastCumulativeUsage = nil
         }
         guard size > state.offset,
               let handle = try? FileHandle(forReadingFrom: url) else {
@@ -196,6 +243,15 @@ public actor CodexRolloutTaskMonitor {
             let line = Data(state.pendingData[..<newline])
             state.pendingData.removeSubrange(...newline)
             guard !line.isEmpty else { continue }
+            if let tokenEvent = CodexLocalTokenUsageParser.parse(line: line) {
+                let delta = tokenUsageDelta(
+                    for: tokenEvent,
+                    previous: &state.lastCumulativeUsage
+                )
+                if calendar.isDate(tokenEvent.occurredAt, inSameDayAs: usageDay) {
+                    state.todayUsage = state.todayUsage + delta
+                }
+            }
             if let resolvedCallID = CodexRolloutEventParser.resolvedToolCallID(line: line) {
                 pendingApprovals.removeValue(forKey: resolvedCallID)
             }
@@ -324,6 +380,80 @@ public actor CodexRolloutTaskMonitor {
         for line in lines {
             _ = CodexRolloutEventParser.parse(line: Data(line), state: &state)
         }
+    }
+
+    private func recomputeTodayTokenUsage() {
+        for url in trackedFileURLs {
+            let tokenState = bootstrapTodayTokenUsage(for: url)
+            fileStates[url]?.todayUsage = tokenState.todayUsage
+            fileStates[url]?.lastCumulativeUsage = tokenState.lastCumulativeUsage
+        }
+    }
+
+    private func bootstrapTodayTokenUsage(for url: URL) -> LocalTokenFileState {
+        guard let handle = try? FileHandle(forReadingFrom: url) else {
+            return LocalTokenFileState()
+        }
+        defer { try? handle.close() }
+
+        var state = LocalTokenFileState()
+        var pending = Data()
+        while let data = try? handle.read(upToCount: Self.tokenReadChunkSize), !data.isEmpty {
+            pending.append(data)
+            consumeTokenUsageLines(in: &pending, state: &state)
+        }
+        if !pending.isEmpty,
+           let tokenEvent = CodexLocalTokenUsageParser.parse(line: pending) {
+            consumeTokenUsageEvent(tokenEvent, state: &state)
+        }
+        return state
+    }
+
+    private func consumeTokenUsageLines(
+        in pending: inout Data,
+        state: inout LocalTokenFileState
+    ) {
+        while let newline = pending.firstIndex(of: 0x0A) {
+            let line = Data(pending[..<newline])
+            pending.removeSubrange(...newline)
+            guard let tokenEvent = CodexLocalTokenUsageParser.parse(line: line) else { continue }
+            consumeTokenUsageEvent(tokenEvent, state: &state)
+        }
+    }
+
+    private func consumeTokenUsageEvent(
+        _ event: CodexLocalTokenUsageEvent,
+        state: inout LocalTokenFileState
+    ) {
+        let delta = tokenUsageDelta(for: event, previous: &state.lastCumulativeUsage)
+        if calendar.isDate(event.occurredAt, inSameDayAs: usageDay) {
+            state.todayUsage = state.todayUsage + delta
+        }
+    }
+
+    private func tokenUsageDelta(
+        for event: CodexLocalTokenUsageEvent,
+        previous: inout CodexTokenUsage?
+    ) -> CodexTokenUsage {
+        defer { previous = event.cumulativeUsage }
+        guard let previous,
+              event.cumulativeUsage.inputTokens >= previous.inputTokens,
+              event.cumulativeUsage.outputTokens >= previous.outputTokens,
+              event.cumulativeUsage.totalTokens >= previous.totalTokens else {
+            return event.lastUsage
+        }
+        return CodexTokenUsage(
+            inputTokens: event.cumulativeUsage.inputTokens - previous.inputTokens,
+            outputTokens: event.cumulativeUsage.outputTokens - previous.outputTokens,
+            totalTokens: event.cumulativeUsage.totalTokens - previous.totalTokens
+        )
+    }
+
+    private func publishLocalTodayTokenUsage(force: Bool = false) {
+        let total = fileStates.values.reduce(.zero) { $0 + $1.todayUsage }
+        guard force || total != lastLocalTodayUsage else { return }
+        lastLocalTodayUsage = total
+        localTokenUsageContinuation.yield(total)
     }
 
     private func rolloutFiles() -> [RolloutFile] {
