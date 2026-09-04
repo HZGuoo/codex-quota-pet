@@ -321,9 +321,9 @@ struct PetBallView: View {
 
     private var todayTokenUsageCard: some View {
         let initialized = store.localTodayTokenUsageInitialized
-        let days = store.tokenUsage.days
+        let days = completedCloudTokenDays
         let total = store.localTodayTokenUsage.totalTokens
-        let maximum = max(1, store.tokenUsage.peakDailyTokens)
+        let maximum = max(1, days.map(\.usage.totalTokens).max() ?? 0)
         let selectedDay = hoveredTokenDay.flatMap { selected in
             days.first(where: { $0.day == selected })
         }
@@ -382,10 +382,12 @@ struct PetBallView: View {
     }
 
     private var recentTokenUsageCard: some View {
-        let days = store.tokenUsage.days
+        let days = completedCloudTokenDays
         let initialized = store.tokenUsage.syncedAt != nil
-        let total = store.tokenUsage.total.totalTokens
-        let maximum = max(1, store.tokenUsage.peakDailyTokens)
+        let total = days.reduce(CodexTokenUsage.zero) { $0 + $1.usage }.totalTokens
+        let average = days.isEmpty ? 0 : total / Int64(days.count)
+        let peak = days.map(\.usage.totalTokens).max() ?? 0
+        let maximum = max(1, peak)
         let selectedDay = hoveredTokenDay.flatMap { selected in
             days.first(where: { $0.day == selected })
         }
@@ -429,9 +431,9 @@ struct PetBallView: View {
             tokenUsageDateAxis(days: days)
 
             HStack {
-                Text("日均 \(initialized ? tokenCountText(store.tokenUsage.averageDailyTokens) : "--")")
+                Text("日均 \(initialized ? tokenCountText(average) : "--")")
                 Spacer()
-                Text("峰值 \(initialized ? tokenCountText(store.tokenUsage.peakDailyTokens) : "--")")
+                Text("峰值 \(initialized ? tokenCountText(peak) : "--")")
             }
             .font(.system(size: 9.5, weight: .medium))
             .foregroundStyle(.secondary)
@@ -445,8 +447,17 @@ struct PetBallView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             initialized
-                ? "最近 30 天 Token 共 \(total)，日均 \(store.tokenUsage.averageDailyTokens)，峰值 \(store.tokenUsage.peakDailyTokens)"
+                ? "最近 30 个完整自然日 Token 共 \(total)，日均 \(average)，峰值 \(peak)"
                 : "正在同步最近 30 天云端 Token 使用"
+        )
+    }
+
+    private var completedCloudTokenDays: [CodexDailyTokenUsage] {
+        let calendar = Calendar.autoupdatingCurrent
+        return Array(
+            store.tokenUsage.days
+                .filter { !calendar.isDateInToday($0.day) }
+                .suffix(30)
         )
     }
 

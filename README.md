@@ -20,7 +20,7 @@ Codex Quota Pet is a privacy-first native macOS companion for Codex. It displays
 - 透明桌面额度球，可拖动、展开、跨 Space、保持最前或鼠标穿透，并可设置失去焦点时是否自动收起
 - 额度球实时显示运行中、等待批准和等待输入的顶层任务数量
 - 展开额度球后可点击执行、待批准或待输入状态卡，快速切换到 Codex 桌面应用
-- 展开额度球可显示本地实时的当天 Token 总量，并使用云端数据绘制最近 30 天每日使用柱状图
+- 展开额度球可显示本地实时的当天 Token 总量，并使用云端数据绘制最近 30 个完整自然日（不含当天）的每日使用柱状图
 - 默认关闭代理；启用后默认地址为 `http://127.0.0.1:10808`，支持 HTTP 和 SOCKS5
 - 代理失败时不会自动直连
 - 默认每 1 分钟刷新，可在 1～60 分钟之间输入或步进配置
@@ -53,8 +53,9 @@ Codex Quota Pet is a privacy-first native macOS companion for Codex. It displays
 ### 设置
 
 <p>
-  <img src="docs/images/settings-general.png" width="48%" alt="代理、刷新和桌面额度球设置">
-  <img src="docs/images/settings-notifications.png" width="48%" alt="任务通知和应用设置">
+  <img src="docs/images/settings-general.png" width="32%" alt="代理、刷新和桌面额度球设置">
+  <img src="docs/images/settings-notifications.png" width="32%" alt="桌面额度球和任务通知设置">
+  <img src="docs/images/settings-app.png" width="32%" alt="任务通知、登录启动和 Codex 可执行文件设置">
 </p>
 
 ## 要求

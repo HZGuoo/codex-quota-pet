@@ -138,7 +138,7 @@ public actor CodexAppServerClient {
                     "version": Self.clientVersion
                 ]
             ]
-            _ = try await request(method: "initialize", params: params, timeoutSeconds: 10)
+            _ = try await request(method: "initialize", params: params, timeoutSeconds: 15)
             try sendNotification(method: "initialized", params: [:])
         } catch {
             stop()
@@ -174,7 +174,7 @@ public actor CodexAppServerClient {
         if child?.isRunning == true { child?.terminate() }
     }
 
-    public func readAccount(timeoutSeconds: TimeInterval = 10) async throws -> AccountResponse {
+    public func readAccount(timeoutSeconds: TimeInterval = 15) async throws -> AccountResponse {
         let data = try await request(
             method: "account/read",
             params: ["refreshToken": false],
@@ -183,7 +183,7 @@ public actor CodexAppServerClient {
         return try JSONDecoder().decode(AccountResponse.self, from: data)
     }
 
-    public func readRateLimits(timeoutSeconds: TimeInterval = 10) async throws -> QuotaSnapshot {
+    public func readRateLimits(timeoutSeconds: TimeInterval = 20) async throws -> QuotaSnapshot {
         let data = try await request(
             method: "account/rateLimits/read",
             params: nil,
@@ -193,7 +193,7 @@ public actor CodexAppServerClient {
     }
 
     public func readAccountTokenUsage(
-        timeoutSeconds: TimeInterval = 10,
+        timeoutSeconds: TimeInterval = 20,
         calendar: Calendar = .autoupdatingCurrent
     ) async throws -> CodexTokenUsageSnapshot {
         let data = try await request(
@@ -204,12 +204,13 @@ public actor CodexAppServerClient {
         return try CodexTokenUsageSnapshot.decodeCloud(
             from: data,
             calendar: calendar,
-            syncedAt: Date()
+            syncedAt: Date(),
+            dayCount: 31
         )
     }
 
     public func readThreadStatusInventory(
-        timeoutSeconds: TimeInterval = 10
+        timeoutSeconds: TimeInterval = 15
     ) async throws -> CodexThreadTaskStatusInventory {
         var activeByThreadID: [String: CodexTaskLiveState] = [:]
         var inactiveThreadIDs: Set<String> = []

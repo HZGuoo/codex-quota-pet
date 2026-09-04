@@ -28,7 +28,10 @@ final class QuotaStore: ObservableObject {
     private var taskEventTask: Task<Void, Never>?
     private var taskStatusTask: Task<Void, Never>?
     private var localTokenUsageTask: Task<Void, Never>?
+    private var backgroundDataRefreshTask: Task<Void, Never>?
+    private var backgroundDataRefreshGeneration = 0
     private var reconnectAttempt = 0
+    private var lastTaskInventoryAttemptAt = Date.distantPast
     private var seenTaskEvents: [String: Date] = [:]
     private var rolloutTaskStatus = CodexTaskStatusSnapshot.empty
     private var appServerTaskStatus: [String: CodexTaskLiveState] = [:]
@@ -38,6 +41,8 @@ final class QuotaStore: ObservableObject {
     private static let legacyDefaultsSuite = "com.local.CodexQuotaPet"
     private static let panelFrameKey = "NSWindow Frame CodexQuotaPet.panelFrame"
     private static let reconnectDelays: [UInt64] = [1, 2, 5, 15, 30]
+    private static let taskInventoryRefreshInterval: TimeInterval = 5 * 60
+    private static let timeoutRetryDelay: Duration = .milliseconds(750)
     private static let syncTimeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = .autoupdatingCurrent
@@ -128,6 +133,7 @@ final class QuotaStore: ObservableObject {
         taskEventTask?.cancel()
         taskStatusTask?.cancel()
         localTokenUsageTask?.cancel()
+        cancelBackgroundDataRefresh()
         rolloutTaskStatus = .empty
         appServerTaskStatus.removeAll()
         appServerInactiveThreadIDs.removeAll()
@@ -136,6 +142,7 @@ final class QuotaStore: ObservableObject {
         tokenUsageUnavailable = false
         localTodayTokenUsage = .zero
         localTodayTokenUsageInitialized = false
+        lastTaskInventoryAttemptAt = .distantPast
         Task { await client.stop() }
         Task { await taskMonitor.stop() }
     }
@@ -187,6 +194,8 @@ final class QuotaStore: ObservableObject {
         if connectionChanged {
             connected = false
             reconnectAttempt = 0
+            cancelBackgroundDataRefresh()
+            lastTaskInventoryAttemptAt = .distantPast
             clearAppServerTaskStatus()
             tokenUsage = .empty
             tokenUsageUnavailable = false
@@ -233,33 +242,92 @@ final class QuotaStore: ObservableObject {
                 try await client.start(settings: settings)
             }
             if !connected {
-                let account = try await client.readAccount()
+                let account = try await withSingleTimeoutRetry {
+                    try await client.readAccount()
+                }
                 try Self.validateAccount(account)
                 connected = true
             }
 
-            let taskInventory = try await client.readThreadStatusInventory()
-            applyAppServerTaskStatusInventory(taskInventory)
-            let snapshot = try await client.readRateLimits()
-            state = .current(snapshot)
-            do {
-                tokenUsage = try await client.readAccountTokenUsage()
-                tokenUsageUnavailable = false
-            } catch is CancellationError {
-                return
-            } catch {
-                tokenUsageUnavailable = true
+            let snapshot = try await withSingleTimeoutRetry {
+                try await client.readRateLimits()
             }
+            state = .current(snapshot)
             reconnectAttempt = 0
             reconnectTask?.cancel()
             reconnectTask = nil
+            scheduleBackgroundDataRefresh()
         } catch is CancellationError {
             return
         } catch {
             connected = await client.isRunning
-            tokenUsageUnavailable = true
             markFailure(error.localizedDescription)
             if !connected { scheduleReconnect() }
+        }
+    }
+
+    private func scheduleBackgroundDataRefresh() {
+        guard started, backgroundDataRefreshTask == nil else { return }
+        backgroundDataRefreshGeneration += 1
+        let refreshGeneration = backgroundDataRefreshGeneration
+        backgroundDataRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                if self.backgroundDataRefreshGeneration == refreshGeneration {
+                    self.backgroundDataRefreshTask = nil
+                }
+            }
+            await self.refreshCloudTokenUsage()
+            guard !Task.isCancelled else { return }
+            await self.refreshTaskInventoryIfNeeded()
+        }
+    }
+
+    private func cancelBackgroundDataRefresh() {
+        backgroundDataRefreshGeneration += 1
+        backgroundDataRefreshTask?.cancel()
+        backgroundDataRefreshTask = nil
+    }
+
+    private func refreshCloudTokenUsage() async {
+        do {
+            tokenUsage = try await withSingleTimeoutRetry {
+                try await client.readAccountTokenUsage()
+            }
+            tokenUsageUnavailable = false
+        } catch is CancellationError {
+            return
+        } catch {
+            tokenUsageUnavailable = true
+        }
+    }
+
+    private func refreshTaskInventoryIfNeeded() async {
+        let now = Date()
+        guard now.timeIntervalSince(lastTaskInventoryAttemptAt)
+                >= Self.taskInventoryRefreshInterval else { return }
+        lastTaskInventoryAttemptAt = now
+        do {
+            let inventory = try await withSingleTimeoutRetry {
+                try await client.readThreadStatusInventory()
+            }
+            applyAppServerTaskStatusInventory(inventory)
+        } catch is CancellationError {
+            return
+        } catch {
+            // Rollout monitoring and App Server notifications remain active as fallbacks.
+        }
+    }
+
+    private func withSingleTimeoutRetry<T>(
+        _ operation: () async throws -> T
+    ) async throws -> T {
+        do {
+            return try await operation()
+        } catch let error as CodexAppServerError {
+            guard case .requestTimedOut = error else { throw error }
+            try await Task.sleep(for: Self.timeoutRetryDelay)
+            return try await operation()
         }
     }
 
@@ -282,6 +350,8 @@ final class QuotaStore: ObservableObject {
             }
         case let .terminated(message):
             connected = false
+            cancelBackgroundDataRefresh()
+            lastTaskInventoryAttemptAt = .distantPast
             clearAppServerTaskStatus()
             tokenUsageUnavailable = true
             markFailure(message ?? "Codex app-server 已退出")
