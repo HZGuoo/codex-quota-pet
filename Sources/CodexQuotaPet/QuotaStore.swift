@@ -319,8 +319,8 @@ final class QuotaStore: ObservableObject {
         }
     }
 
-    private func withSingleTimeoutRetry<T>(
-        _ operation: () async throws -> T
+    private func withSingleTimeoutRetry<T: Sendable>(
+        _ operation: @MainActor @Sendable () async throws -> T
     ) async throws -> T {
         do {
             return try await operation()
