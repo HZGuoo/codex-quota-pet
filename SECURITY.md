@@ -1,20 +1,30 @@
 # Security Policy
 
-## 支持范围
+[简体中文](docs/SECURITY.zh-CN.md)
 
-安全修复以最新发布版本和 `main` 分支为优先。旧版本可能需要先升级后才能获得修复。
+## Supported versions
 
-## 报告安全问题
+Security fixes target the latest release and the `main` branch. Older releases
+may need to upgrade before receiving a fix.
 
-请不要创建公开 Issue 披露尚未修复的漏洞。仓库发布到 GitHub 后，请通过仓库的 **Security → Report a vulnerability** 私密报告，并提供：
+## Report a vulnerability
 
-- 受影响版本和 macOS 版本；
-- 可复现步骤及预期影响；
-- 必要的最小日志或截图；
-- 建议的缓解方式（如有）。
+Do not open a public issue for an unpatched vulnerability. Use GitHub
+**Security → Report a vulnerability** and include:
 
-请先删除令牌、邮箱、代理凭据、完整会话内容和其他个人信息。维护者会确认收到报告、评估影响，并在修复可用后协调公开披露。
+- affected Codex Quota Pet and macOS versions;
+- minimal reproduction steps and expected impact;
+- the smallest necessary redacted log or screenshot;
+- a suggested mitigation, if available.
 
-## 安全边界
+Remove tokens, email addresses, proxy credentials, complete prompts or
+responses, private paths, and other personal data. The maintainer will confirm
+receipt, assess impact, and coordinate disclosure after a fix is available.
 
-Codex Quota Pet 会启动本机 `codex app-server`，读取本机 Codex 写入的任务状态文件，并可通过用户配置的代理进行连接。应用不应读取、复制、持久化或记录认证令牌，也不应在代理失败时绕过“禁止直连”设置。涉及这些边界的回归应按安全问题处理。
+## Security boundary
+
+The project launches the local `codex app-server`, reads minimum task-state and
+usage metadata written by Codex, and can configure a proxy for the child
+process. It must not read, copy, persist, or log authentication tokens. It must
+also fail closed instead of bypassing an explicitly configured proxy. Regressions
+in these boundaries should be reported as security issues.

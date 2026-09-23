@@ -4,6 +4,8 @@
 .swiftpm/
 DerivedData/
 dist/
+output/
+tmp/
 *.dmg
 *.xcarchive
 *.xcodeproj/xcuserdata/

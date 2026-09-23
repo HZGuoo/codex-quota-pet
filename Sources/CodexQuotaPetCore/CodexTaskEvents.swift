@@ -37,7 +37,7 @@ public struct CodexTaskEvent: Codable, Sendable, Equatable {
     }
 }
 
-public struct CodexTaskStatusSummary: Sendable, Equatable {
+public struct CodexTaskStatusSummary: Codable, Sendable, Equatable {
     public var runningCount: Int
     public var waitingApprovalCount: Int
     public var waitingInputCount: Int

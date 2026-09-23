@@ -23,7 +23,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         }
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 520),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 560),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -61,6 +61,9 @@ private struct SettingsView: View {
     @State private var refreshInputError: String?
     @State private var isTesting = false
     @State private var testMessage: String?
+    @State private var isCheckingUpdate = false
+    @State private var updateMessage: String?
+    @State private var updateURL: URL?
     @FocusState private var focusedInput: SettingsInputField?
 
     init(store: QuotaStore) {
@@ -201,6 +204,32 @@ private struct SettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .help(codexPathText.isEmpty ? "未找到 Codex 可执行文件" : codexPathText)
                     .textSelection(.enabled)
+                HStack {
+                    Button {
+                        checkForUpdates()
+                    } label: {
+                        Label("检查更新", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    .buttonStyle(AppActionButtonStyle())
+                    .disabled(isCheckingUpdate)
+                    if isCheckingUpdate { ProgressView().controlSize(.small) }
+                    if let updateURL {
+                        Button("打开下载页") {
+                            NSWorkspace.shared.open(updateURL)
+                        }
+                        .buttonStyle(AppActionButtonStyle(foregroundColor: AuroraStyle.accent))
+                    }
+                    Spacer()
+                    Text("当前版本 \(currentVersion)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if let updateMessage {
+                    Text(updateMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
                 }
                 .listRowBackground(glassRowColor)
 
@@ -214,7 +243,7 @@ private struct SettingsView: View {
                 actionFooter
             }
         }
-        .frame(width: 520, height: 520)
+        .frame(width: 520, height: 560)
         .tint(AuroraStyle.accent)
         .onChange(of: focusedInput) { newValue in
             switch newValue {
@@ -418,6 +447,31 @@ private struct SettingsView: View {
             case let .failure(error):
                 testMessage = "连接失败：\(error.localizedDescription)"
             }
+        }
+    }
+
+    private var currentVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+            ?? "development"
+    }
+
+    private func checkForUpdates() {
+        isCheckingUpdate = true
+        updateMessage = "正在检查 GitHub Releases…"
+        updateURL = nil
+        let installed = currentVersion
+        Task {
+            do {
+                if let update = try await GitHubReleaseUpdateChecker.check(currentVersion: installed) {
+                    updateMessage = "发现新版本 \(update.latestVersion)。"
+                    updateURL = update.releaseURL
+                } else {
+                    updateMessage = "当前已经是最新版本。"
+                }
+            } catch {
+                updateMessage = "检查更新失败：\(error.localizedDescription)"
+            }
+            isCheckingUpdate = false
         }
     }
 

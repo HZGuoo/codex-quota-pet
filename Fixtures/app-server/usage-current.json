@@ -1,0 +1,9 @@
+{
+  "dailyUsageBuckets": [
+    { "startDate": "2026-09-02", "tokens": 1200 },
+    { "startDate": "2026-09-03", "tokens": 2450 }
+  ],
+  "summary": {
+    "lifetimeTokens": 3650
+  }
+}

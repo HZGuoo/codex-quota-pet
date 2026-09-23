@@ -1,0 +1,58 @@
+name: Codex compatibility report
+description: Report a response-shape or behavior change in a Codex version
+title: "[Compatibility]: "
+labels: ["compatibility", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read docs/COMPATIBILITY.md first. Do not paste complete App Server output or private session files.
+  - type: input
+    id: codex-version
+    attributes:
+      label: Codex version
+      description: Paste the exact output of codex --version.
+    validations:
+      required: true
+  - type: dropdown
+    id: source
+    attributes:
+      label: Codex installation source
+      options:
+        - ChatGPT desktop bundled Codex
+        - npm Codex CLI
+        - Homebrew Codex CLI
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: macOS version and architecture
+      placeholder: macOS 15.6, arm64
+    validations:
+      required: true
+  - type: checkboxes
+    id: capability
+    attributes:
+      label: Affected capability
+      options:
+        - label: Quota windows
+        - label: Daily token usage
+        - label: Task states
+        - label: Deep links or notifications
+        - label: App Server startup
+  - type: textarea
+    id: details
+    attributes:
+      label: Sanitized details
+      description: Include the smallest error or redacted response shape needed to understand the change.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed authentication tokens, prompts, responses, proxy credentials, emails, and private paths.
+          required: true

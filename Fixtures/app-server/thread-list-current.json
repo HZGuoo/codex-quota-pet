@@ -1,0 +1,20 @@
+{
+  "data": [
+    {
+      "id": "synthetic-running-thread",
+      "parentThreadId": null,
+      "status": { "type": "active", "activeFlags": [] }
+    },
+    {
+      "id": "synthetic-approval-thread",
+      "parentThreadId": null,
+      "status": { "type": "active", "activeFlags": ["waitingOnApproval"] }
+    },
+    {
+      "id": "synthetic-child-thread",
+      "parentThreadId": "synthetic-running-thread",
+      "status": { "type": "active", "activeFlags": [] }
+    }
+  ],
+  "nextCursor": null
+}

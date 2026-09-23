@@ -47,7 +47,7 @@ public struct RateLimitResetCredits: Codable, Equatable, Sendable {
     public let availableCount: Int64
 }
 
-public struct QuotaSnapshot: Equatable, Sendable {
+public struct QuotaSnapshot: Codable, Equatable, Sendable {
     public static let fiveHourWindowDurationMins: Int64 = 5 * 60
     public static let weeklyWindowDurationMins: Int64 = 7 * 24 * 60
 

@@ -1,6 +1,6 @@
 import Foundation
 
-public struct CodexTokenUsage: Sendable, Equatable {
+public struct CodexTokenUsage: Codable, Sendable, Equatable {
     public let inputTokens: Int64
     public let outputTokens: Int64
     public let totalTokens: Int64
@@ -92,7 +92,7 @@ public enum CodexLocalTokenUsageParser {
     }
 }
 
-public struct CodexDailyTokenUsage: Sendable, Equatable, Identifiable {
+public struct CodexDailyTokenUsage: Codable, Sendable, Equatable, Identifiable {
     public let day: Date
     public let usage: CodexTokenUsage
 
@@ -104,7 +104,7 @@ public struct CodexDailyTokenUsage: Sendable, Equatable, Identifiable {
     public var id: Date { day }
 }
 
-public struct CodexTokenUsageSnapshot: Sendable, Equatable {
+public struct CodexTokenUsageSnapshot: Codable, Sendable, Equatable {
     public let days: [CodexDailyTokenUsage]
     public let syncedAt: Date?
     public let lastReportedDay: Date?

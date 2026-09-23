@@ -2,6 +2,29 @@
 
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 的结构，并计划从首个公开版本开始采用语义化版本号。
 
+## [Unreleased]
+
+## [0.2.5] - 2026-09-23
+
+### Added
+
+- 新增 `codex-observe` 命令行工具，可导出不含对话内容的 JSON 或 CSV 观测快照。
+- 新增 `CodexObservabilityClient`、快照模型和导出 API，正式公开 `CodexQuotaPetCore` 的复用边界。
+- 新增 App Server 协议说明、合成 fixture 和版本兼容矩阵。
+- 新增手动 GitHub Releases 更新检查。
+- 新增 Developer ID 签名、公证发布脚本和仓库内 Homebrew Cask。
+- 新增 Issue 表单、PR 模板、路线图和采用数据台账。
+
+### Changed
+
+- README 改为英文主文档并增加完整中文版本，将项目定位调整为隐私优先的 Codex 本地观测工具。
+- 发布流程在配置 Apple 凭据后生成已签名、公证并装订票据的 Universal 2 包。
+
+### Fixed
+
+- 修复 macOS 27 上桌面额度球无法拖动的问题，并确保拖动、单击展开和右键菜单互不冲突。
+- 修复展开状态拖动后收起位置未同步的问题。
+
 ## [0.2.4] - 2026-09-04
 
 ### Changed

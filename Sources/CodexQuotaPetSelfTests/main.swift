@@ -35,6 +35,41 @@ struct CodexQuotaPetSelfTests {
         }
         passed += 1
 
+        try run("versioned app-server fixtures") {
+            let sourceFile = URL(fileURLWithPath: #filePath)
+            let root = sourceFile
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+            let fixtures = root.appendingPathComponent("Fixtures/app-server", isDirectory: true)
+            let rateLimits = try Data(contentsOf: fixtures.appendingPathComponent("rate-limits-current.json"))
+            let usage = try Data(contentsOf: fixtures.appendingPathComponent("usage-current.json"))
+            let threads = try Data(contentsOf: fixtures.appendingPathComponent("thread-list-current.json"))
+
+            let quotaSnapshot = try QuotaSnapshot.decode(from: rateLimits)
+            try expect(quotaSnapshot.fiveHourWindow?.remainingPercent == 60, "fixture five-hour quota")
+            try expect(quotaSnapshot.weeklyWindow?.remainingPercent == 35, "fixture weekly quota")
+
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+            let syncedAt = calendar.date(from: DateComponents(year: 2026, month: 9, day: 3, hour: 12))!
+            let usageSnapshot = try CodexTokenUsageSnapshot.decodeCloud(
+                from: usage,
+                calendar: calendar,
+                syncedAt: syncedAt,
+                dayCount: 2
+            )
+            try expect(usageSnapshot.total.totalTokens == 3_650, "fixture token total")
+
+            let taskPage = try CodexAppServerTaskEventParser.statusPage(threads)
+            try expect(taskPage.activeByThreadID.count == 2, "fixture excludes child thread")
+            try expect(
+                taskPage.activeByThreadID["synthetic-approval-thread"] == .waitingForApproval,
+                "fixture approval state"
+            )
+        }
+        passed += 1
+
         try run("legacy and percentage clamping") {
             let data = Data(#"{"rateLimits":{"primary":{"usedPercent":140},"secondary":{"usedPercent":-10}},"rateLimitsByLimitId":null}"#.utf8)
             let snapshot = try QuotaSnapshot.decode(from: data)

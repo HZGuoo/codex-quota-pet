@@ -1,29 +1,54 @@
 # Privacy
 
-Codex Quota Pet 是本机运行的 macOS 工具，不包含分析 SDK、广告 SDK、崩溃上报服务或项目自有的远程服务器。
+[简体中文](docs/PRIVACY.zh-CN.md)
 
-## 应用读取的数据
+Codex Quota Pet runs locally. It contains no analytics SDK, advertising SDK,
+crash-reporting service, or project-owned backend.
 
-- 通过本机 `codex app-server` 读取账号类型、Codex 额度快照，以及云端最近 30 天的每日 Token 总量；
-- 只读监听 `~/.codex/sessions` 中 Codex 自己写入的任务状态和 `token_count` 用量元数据，以显示任务数量并实时汇总当天 Token 总量；
-- 在本机偏好设置中保存代理配置、刷新间隔、窗口行为和 Codex 可执行文件路径。
+## Data the project reads
 
-## 应用不会做的事情
+- Account type, quota snapshots, and aggregate daily token totals through the
+  local `codex app-server` process.
+- Minimum task-state and `token_count` metadata written by Codex under
+  `~/.codex/sessions` for local status counts and today's aggregate token total.
+- Local preferences for proxy mode, refresh interval, window behavior, and the
+  selected Codex executable path.
 
-- 不读取、复制、保存或记录 ChatGPT/Codex 认证令牌；
-- Token 统计只解析用量元数据，不读取、复制、保存或记录对话正文；
-- 不上传任务内容、额度数据或设置到项目维护者控制的服务器；
-- 不修改 Codex 会话，不自动批准操作，也不代表用户提交输入；
-- 不在配置的代理不可用时自动改为直连。
+## Data the project does not read or send
 
-## 网络与代理
+- It does not read, copy, persist, or log ChatGPT or Codex authentication tokens.
+- Token aggregation does not parse prompt or response text.
+- It does not upload task content, quota data, exports, or preferences to a
+  server controlled by the project maintainers.
+- It does not modify Codex sessions, approve actions, or submit user input.
+- It does not silently use a direct connection when an explicit proxy is
+  unavailable.
 
-额度请求由应用启动的 Codex 子进程完成。代理关闭时，Codex 按其正常网络配置连接；代理启用时，应用为该子进程设置对应的代理环境变量。连接仍受 OpenAI 服务自身的条款和隐私政策约束。
+## Network behavior
 
-## 系统通知
+Quota and usage requests are made by the local Codex child process. When proxy
+mode is enabled, Codex receives the selected proxy environment. Connections to
+OpenAI remain subject to the service's own terms and privacy policy.
 
-任务通知可能包含由会话首条用户消息生成的简短标题。启用“隐藏通知中的任务内容”后，通知只显示通用状态文字。通知由 macOS 本地通知中心管理。
+When the user explicitly selects **Check for Updates**, the app sends a normal
+HTTPS request to the public GitHub Releases API and reads only the latest tag and
+release-page URL. The app does not check automatically in the background.
 
-## 数据删除
+## Exports
 
-退出应用会终止由它启动的 Codex 子进程。删除应用偏好可清除本机保存的设置；Codex 自身的账号和会话数据由 Codex/ChatGPT 管理，不属于本应用的数据存储。
+`CodexQuotaPetCore` and `codex-observe` can export JSON or CSV containing quota
+windows, aggregate token counts, timestamps, and task-state counts. Exports do
+not contain prompts, responses, authentication tokens, proxy credentials, or
+complete task identifiers.
+
+## Notifications
+
+A local notification can contain a short title derived from a task's first user
+message. Enabling private notification content replaces it with generic status
+text. Notifications are managed by macOS Notification Center.
+
+## Deletion
+
+Quitting the app stops the child Codex process. Removing the app preferences
+deletes its locally stored settings. Codex account and session data is managed
+by Codex or ChatGPT and is outside this application's storage.

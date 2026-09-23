@@ -35,12 +35,80 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Build and package application
+      - name: Select release signing mode
+        id: signing
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        shell: zsh {0}
+        run: |
+          if [[ -n "$APPLE_CERTIFICATE_BASE64" && \
+                -n "$APPLE_CERTIFICATE_PASSWORD" && \
+                -n "$APPLE_API_KEY_BASE64" && \
+                -n "$APPLE_API_KEY_ID" && \
+                -n "$APPLE_API_ISSUER_ID" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Import Developer ID certificate
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
+        shell: zsh {0}
+        run: |
+          certificate_path="$RUNNER_TEMP/developer-id.p12"
+          keychain_path="$RUNNER_TEMP/codex-quota-pet.keychain-db"
+          print -rn -- "$APPLE_CERTIFICATE_BASE64" | base64 --decode > "$certificate_path"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security import "$certificate_path" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$keychain_path"
+          security list-keychains -d user -s "$keychain_path" login.keychain-db
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$keychain_path"
+          identity=$(security find-identity -v -p codesigning "$keychain_path" \
+            | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' \
+            | head -n 1)
+          [[ -n "$identity" ]]
+          echo "APPLE_DEVELOPER_ID=$identity" >> "$GITHUB_ENV"
+
+      - name: Build, sign, and notarize application
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          CODEX_QUOTA_BUILD_NUMBER: ${{ github.run_number }}
+        shell: zsh {0}
+        run: |
+          api_key_path="$RUNNER_TEMP/AuthKey_$APPLE_API_KEY_ID.p8"
+          print -rn -- "$APPLE_API_KEY_BASE64" | base64 --decode > "$api_key_path"
+          APPLE_API_KEY_FILE="$api_key_path" Scripts/package-notarized-release.sh
+
+      - name: Build unsigned fallback package
+        if: steps.signing.outputs.enabled != 'true'
         env:
           CODEX_QUOTA_BUILD_NUMBER: ${{ github.run_number }}
         run: Scripts/package-release.sh
 
       - name: Prepare release notes
+        env:
+          SIGNED_RELEASE: ${{ steps.signing.outputs.enabled }}
         shell: zsh {0}
         run: |
           version="${{ steps.version.outputs.version }}"
@@ -53,10 +121,11 @@ jobs:
             echo "No CHANGELOG section found for $version." >&2
             exit 1
           fi
-          cat >> dist/release-notes.md <<'EOF'
-
-          > 此构建使用临时签名，尚未经过 Apple 公证。macOS 首次阻止启动时，请在 Finder 中右键应用并选择“打开”。
-          EOF
+          if [[ "$SIGNED_RELEASE" == "true" ]]; then
+            print '\n> This build is signed with Developer ID and notarized by Apple.\n' >> dist/release-notes.md
+          else
+            print '\n> This build is ad-hoc signed and not notarized. Control-click the app and choose Open on first launch.\n' >> dist/release-notes.md
+          fi
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
@@ -78,3 +147,8 @@ jobs:
             --latest \
             --title "Codex Quota Pet $GITHUB_REF_NAME" \
             --notes-file dist/release-notes.md
+
+      - name: Remove temporary signing keychain
+        if: always() && steps.signing.outputs.enabled == 'true'
+        shell: zsh {0}
+        run: security delete-keychain "$RUNNER_TEMP/codex-quota-pet.keychain-db" || true

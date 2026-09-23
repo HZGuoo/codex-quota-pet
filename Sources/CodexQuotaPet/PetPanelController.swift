@@ -17,6 +17,8 @@ final class PetPanelController: NSObject, NSWindowDelegate {
     private var panel: PetPanel?
     private var hostingView: NSHostingView<PetBallView>?
     private var compactOriginBeforeExpansion: NSPoint?
+    private var dragStartPointer: NSPoint?
+    private var dragStartOrigin: NSPoint?
     private var collapseOnFocusLoss = true
     private var cancellables: Set<AnyCancellable> = []
     private var screenObserver: Any?
@@ -47,7 +49,8 @@ final class PetPanelController: NSObject, NSWindowDelegate {
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = false
-        panel.isMovableByWindowBackground = true
+        // Explicit SwiftUI dragging avoids background-drag event arbitration.
+        panel.isMovableByWindowBackground = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         panel.setFrameAutosaveName("CodexQuotaPet.panelFrame")
         var compactFrame = panel.frame
@@ -55,7 +58,9 @@ final class PetPanelController: NSObject, NSWindowDelegate {
         panel.setFrame(compactFrame, display: false)
         let hostingView = NSHostingView(rootView: PetBallView(
             store: store,
-            onExpansionChanged: { [weak self] expanded in self?.resize(expanded: expanded) }
+            onExpansionChanged: { [weak self] expanded in self?.resize(expanded: expanded) },
+            onDragChanged: { [weak self] in self?.drag() },
+            onDragEnded: { [weak self] in self?.finishDrag() }
         ))
         panel.contentView = hostingView
         panel.delegate = self
@@ -83,19 +88,58 @@ final class PetPanelController: NSObject, NSWindowDelegate {
     }
 
     func hide() {
+        finishDrag()
         panel?.orderOut(nil)
     }
 
     private func apply(_ settings: AppSettings) {
         guard let panel else { return }
+        if settings.mousePassthrough || !settings.showPet { finishDrag() }
         panel.level = settings.alwaysOnTop ? .floating : .normal
         panel.ignoresMouseEvents = settings.mousePassthrough
         collapseOnFocusLoss = settings.collapsePetOnFocusLoss
         settings.showPet ? panel.orderFrontRegardless() : panel.orderOut(nil)
     }
 
+    private func drag() {
+        guard let panel, !panel.ignoresMouseEvents else { return }
+        let pointer = NSEvent.mouseLocation
+        guard let startPointer = dragStartPointer, let startOrigin = dragStartOrigin else {
+            dragStartPointer = pointer
+            dragStartOrigin = panel.frame.origin
+            return
+        }
+        // Use screen coordinates: SwiftUI local coordinates change as the window moves.
+        let origin = NSPoint(
+            x: startOrigin.x + pointer.x - startPointer.x,
+            y: startOrigin.y + pointer.y - startPointer.y
+        )
+        move(to: origin, panel: panel)
+    }
+
+    private func finishDrag() {
+        guard dragStartOrigin != nil else { return }
+        dragStartPointer = nil
+        dragStartOrigin = nil
+        guard let panel else { return }
+        move(to: constrained(panel.frame).origin, panel: panel)
+        panel.saveFrame(usingName: "CodexQuotaPet.panelFrame")
+    }
+
+    private func move(to origin: NSPoint, panel: PetPanel) {
+        if let compactOrigin = compactOriginBeforeExpansion {
+            // Keep the collapsed ball at its new location after dragging the expanded card.
+            compactOriginBeforeExpansion = NSPoint(
+                x: compactOrigin.x + origin.x - panel.frame.origin.x,
+                y: compactOrigin.y + origin.y - panel.frame.origin.y
+            )
+        }
+        panel.setFrameOrigin(origin)
+    }
+
     private func resize(expanded: Bool) {
         guard let panel, let hostingView else { return }
+        finishDrag()
         guard expanded else {
             panel.allowsKeyWindow = false
             let compactSize = NSSize(

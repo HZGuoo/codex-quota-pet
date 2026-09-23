@@ -13,6 +13,9 @@ struct PetBallView: View {
     @ObservedObject var store: QuotaStore
     @Environment(\.colorScheme) private var colorScheme
     let onExpansionChanged: (Bool) -> Void
+    let onDragChanged: () -> Void
+    let onDragEnded: () -> Void
+    @GestureState private var dragging = false
     @State private var expanded = false
     @State private var hoveredTokenDay: Date?
 
@@ -25,11 +28,30 @@ struct PetBallView: View {
             }
         }
         .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
-                expanded.toggle()
-                onExpansionChanged(expanded)
-            }
+        .gesture(
+            DragGesture(minimumDistance: 4)
+                .updating($dragging) { _, state, _ in
+                    state = true
+                }
+                .onChanged { _ in
+                    onDragChanged()
+                }
+                .exclusively(before: TapGesture())
+                .onEnded { value in
+                    switch value {
+                    case .first:
+                        onDragEnded()
+                    case .second:
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) {
+                            expanded.toggle()
+                            onExpansionChanged(expanded)
+                        }
+                    }
+                }
+        )
+        .onChange(of: dragging) { active in
+            // GestureState also resets on cancellation, which may skip onEnded.
+            if !active { onDragEnded() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .collapseCodexQuotaPet)) { _ in
             guard expanded else { return }

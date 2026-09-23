@@ -9,6 +9,7 @@ let package = Package(
     products: [
         .library(name: "CodexQuotaPetCore", targets: ["CodexQuotaPetCore"]),
         .executable(name: "CodexQuotaPet", targets: ["CodexQuotaPet"]),
+        .executable(name: "codex-observe", targets: ["CodexObserveCLI"]),
         .executable(name: "CodexQuotaPetSelfTests", targets: ["CodexQuotaPetSelfTests"])
     ],
     targets: [
@@ -20,6 +21,11 @@ let package = Package(
             name: "CodexQuotaPet",
             dependencies: ["CodexQuotaPetCore"],
             path: "Sources/CodexQuotaPet"
+        ),
+        .executableTarget(
+            name: "CodexObserveCLI",
+            dependencies: ["CodexQuotaPetCore"],
+            path: "Sources/CodexObserveCLI"
         ),
         .executableTarget(
             name: "CodexQuotaPetSelfTests",

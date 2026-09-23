@@ -1,43 +1,52 @@
 # Contributing to Codex Quota Pet
 
-感谢你愿意改进 Codex Quota Pet。项目欢迎错误修复、兼容性改进、测试、文档和界面优化。
+[简体中文](docs/CONTRIBUTING.zh-CN.md)
 
-## 开始之前
+Contributions are welcome for compatibility fixes, tests, documentation,
+accessibility, observability exports, and focused UI improvements.
 
-- 对较大的功能或协议调整，请先创建 Issue，说明使用场景和兼容性影响。
-- 不要在 Issue、日志或测试数据中提交访问令牌、账号信息、代理凭据或私人会话内容。
-- 变更应继续支持 macOS 13、Apple Silicon 和 Intel Mac。
-- 不要引入第三方运行时依赖，除非 Issue 中已经讨论并说明必要性。
+## Before starting
 
-## 本地开发
+- Open an issue before a large feature or protocol change. Describe the user or
+  maintainer workflow and expected compatibility impact.
+- Do not submit authentication tokens, account information, proxy credentials,
+  prompts, responses, private paths, or private session contents.
+- Preserve support for macOS 13, Apple Silicon, and Intel unless an issue has
+  agreed on a compatibility change.
+- Avoid new runtime dependencies unless the issue explains why they are needed.
+- Check `ROADMAP.md` and the existing issue forms before proposing overlapping
+  work.
 
-需要 Swift 6 和 macOS 13 或更新版本。克隆仓库后运行：
+## Local development
+
+Build the application and CLI with Swift 6:
 
 ```bash
 Scripts/build-app.sh
-open "dist/Codex Quota Pet.app"
+swift build --product codex-observe
 ```
 
-执行自测：
+Run the focused self-test executable when changing parsing, state, proxy, or
+export behavior:
 
 ```bash
 swift run --disable-sandbox CodexQuotaPetSelfTests
 ```
 
-如果本机 Swift 编译器与默认 SDK 不匹配，可以将 `CODEX_QUOTA_SDKROOT` 指向兼容的 macOS SDK：
+If the local compiler and SDK do not match, set `CODEX_QUOTA_SDKROOT` to a
+compatible macOS SDK for `Scripts/build-app.sh`.
 
-```bash
-CODEX_QUOTA_SDKROOT="$(xcrun --sdk macosx --show-sdk-path)" Scripts/build-app.sh
-```
+## Pull requests
 
-版本号只在根目录 `VERSION` 中维护。不要直接修改 `Resources/Info.plist` 中的版本占位值；构建和发布脚本会自动写入实际版本与构建号。
+- Keep each pull request focused on one clear problem.
+- Explain user-visible and public-API behavior.
+- Add a sanitized fixture for new App Server response shapes.
+- Add a regression check for parsing or state changes.
+- Update `docs/CORE_API.md` and `CHANGELOG.md` for public API changes.
+- Attach before-and-after screenshots for UI changes and check light, dark, and
+  multi-display behavior.
+- Verify the Universal 2 release build for packaging changes.
+- Never log or copy Codex or ChatGPT authentication tokens.
 
-## Pull Request 要求
-
-- PR 只解决一个清晰的问题，并说明用户可见变化。
-- 新协议解析或状态逻辑必须包含回归测试。
-- 界面调整请附修改前后的截图，并检查浅色、深色及多显示器场景。
-- 不得记录或复制 Codex/ChatGPT 认证令牌。
-- 提交前请运行自测、Universal 2 Release 构建和 `codesign --verify --deep --strict`。
-
-提交贡献即表示你有权提供相关代码，并同意项目按照仓库许可证分发该贡献。
+By contributing, you confirm that you have the right to submit the work and
+agree to distribute it under the repository license.
