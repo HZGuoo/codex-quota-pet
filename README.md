@@ -133,6 +133,12 @@ are documented in [docs/APP_SERVER_PROTOCOL.md](docs/APP_SERVER_PROTOCOL.md).
 
 See [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) for the verification matrix.
 
+Codex is detected in ChatGPT/Codex apps under `/Applications` or
+`~/Applications`, common Homebrew paths, and the app's `PATH`. Both legacy
+bundled binaries and the newer `codex-cli` layout are supported. In Settings,
+you can select an app bundle, a CLI executable, or its directory; **自动查找**
+clears the custom selection and restores automatic discovery after applying.
+
 ## Build
 
 ```bash

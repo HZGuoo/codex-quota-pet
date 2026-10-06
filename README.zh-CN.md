@@ -91,6 +91,8 @@ Codex Quota Pet 是开源 macOS 监控应用和可复用 Swift Package，用于�
 - ChatGPT 应用或 Codex CLI，并已使用 ChatGPT 账号登录
 - Swift 6 工具链；正式签名和公证需要完整 Xcode 与 Apple Developer 证书
 
+应用会在 `/Applications`、`~/Applications` 中的 ChatGPT/Codex 应用、常用 Homebrew 路径及应用进程的 `PATH` 中自动查找 Codex，同时兼容旧版内置二进制和新版 `codex-cli` 布局。设置中可选择整个应用、CLI 文件或其所在目录；点击“自动查找”并应用修改可清除自定义选择，恢复自动发现。
+
 ## 安装
 
 从 [GitHub Releases](https://github.com/HZGuoo/codex-quota-pet/releases/latest) 下载名称形如 `CodexQuotaPet-<版本>-macos-universal.zip` 的安装包，解压后将 `Codex Quota Pet.app` 拖入“应用程序”文件夹。

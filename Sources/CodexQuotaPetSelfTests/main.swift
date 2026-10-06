@@ -13,7 +13,19 @@ enum SelfTestError: LocalizedError {
 @main
 struct CodexQuotaPetSelfTests {
     static func main() async throws {
+        if CommandLine.arguments.contains("--resolve-installed") {
+            print(try CodexExecutableResolver.resolve(customPath: "").path)
+            return
+        }
         var passed = 0
+        try run("Codex executable discovery") {
+            try executableResolverChecks()
+        }
+        passed += 1
+        if CommandLine.arguments.contains("--resolver-only") {
+            print("Codex executable discovery: targeted checks passed")
+            return
+        }
         try run("multi-bucket decoding") {
             let data = Data(#"""
             {
@@ -533,6 +545,86 @@ struct CodexQuotaPetSelfTests {
         if CommandLine.arguments.contains("--dead-proxy") {
             try await deadProxyProbe()
         }
+    }
+
+    private static func executableResolverChecks() throws {
+        let fileManager = FileManager.default
+        let root = fileManager.temporaryDirectory.appendingPathComponent(
+            "codex-resolver-\(UUID().uuidString)", isDirectory: true
+        )
+        try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: root) }
+
+        func fixture(_ path: String, executable: Bool = true) throws -> URL {
+            let url = root.appendingPathComponent(path)
+            try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("synthetic executable fixture".utf8).write(to: url)
+            try fileManager.setAttributes([.posixPermissions: executable ? 0o755 : 0o644], ofItemAtPath: url.path)
+            return url
+        }
+
+        let layouts = [
+            "Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
+            "Contents/Resources/codex-cli/bin/codex",
+            "Contents/Resources/codex"
+        ]
+        for (index, layout) in layouts.enumerated() {
+            let app = root.appendingPathComponent("layout-\(index)/ChatGPT.app", isDirectory: true)
+            let cli = try fixture("layout-\(index)/ChatGPT.app/\(layout)")
+            let automatic = try CodexExecutableResolver.resolve(customPath: "", searchPaths: [app.path])
+            let selected = try CodexExecutableResolver.resolve(customPath: app.path, searchPaths: [])
+            try expect(automatic.path == cli.path, "automatic discovery should recognize layout \(index)")
+            try expect(selected.path == cli.path, "selected app should recognize layout \(index)")
+            try expect(
+                CodexExecutableResolver.standardPaths.contains("/Applications/ChatGPT.app/\(layout)"),
+                "default discovery should include ChatGPT layout \(index)"
+            )
+            try expect(
+                CodexExecutableResolver.standardPaths.contains("/Applications/Codex.app/\(layout)"),
+                "default discovery should include Codex layout \(index)"
+            )
+        }
+
+        let app = root.appendingPathComponent("relocated/Codex.app", isDirectory: true)
+        let modern = try fixture("relocated/Codex.app/\(layouts[0])")
+        let oldPath = app.appendingPathComponent(layouts[2]).path
+        let migrated = try CodexExecutableResolver.resolve(customPath: oldPath, searchPaths: [])
+        try expect(migrated.path == modern.path, "saved legacy CLI path should recover inside the same app")
+        let chosen = try CodexExecutableResolver.resolve(customPath: " \n\(modern.path)\t ", searchPaths: [])
+        try expect(chosen.path == modern.path, "explicit executable should be preserved after trimming")
+
+        let directory = root.appendingPathComponent("cli-directory", isDirectory: true)
+        let directoryCLI = try fixture("cli-directory/bin/codex")
+        let directorySelection = try CodexExecutableResolver.resolve(customPath: directory.path, searchPaths: [])
+        try expect(directorySelection.path == directoryCLI.path, "selected CLI directory should resolve its binary")
+        let link = root.appendingPathComponent("symlink-codex")
+        try fileManager.createSymbolicLink(at: link, withDestinationURL: modern)
+        let linked = try CodexExecutableResolver.resolve(customPath: "", searchPaths: [link.path])
+        try expect(linked.path == link.path, "CLI symlinks should remain supported")
+
+        let empty = root.appendingPathComponent("empty/codex", isDirectory: true)
+        try fileManager.createDirectory(at: empty, withIntermediateDirectories: true)
+        let nonExecutable = try fixture("not-executable", executable: false)
+        let fallback = try CodexExecutableResolver.resolve(
+            customPath: "", searchPaths: [empty.path, nonExecutable.path, modern.path]
+        )
+        try expect(fallback.path == modern.path, "skip directories and files without executable permission")
+
+        for invalid in [empty.path, nonExecutable.path, app.appendingPathComponent("unknown-custom-cli").path] {
+            do {
+                _ = try CodexExecutableResolver.resolve(customPath: invalid, searchPaths: [modern.path])
+                throw SelfTestError.failed("invalid custom path must not silently fall back")
+            } catch CodexExecutableError.customPathNotExecutable {}
+        }
+        _ = try fixture("GuiOnly.app/Contents/MacOS/ChatGPT")
+        do {
+            _ = try CodexExecutableResolver.resolve(customPath: root.appendingPathComponent("GuiOnly.app").path)
+            throw SelfTestError.failed("an app's GUI executable must not be used for app-server")
+        } catch CodexExecutableError.customPathNotExecutable {}
+        do {
+            _ = try CodexExecutableResolver.resolve(customPath: "", searchPaths: [empty.path, nonExecutable.path])
+            throw SelfTestError.failed("missing CLI should report not found")
+        } catch CodexExecutableError.notFound {}
     }
 
     private static func run(_ name: String, operation: () throws -> Void) throws {

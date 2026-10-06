@@ -189,6 +189,12 @@ private struct SettingsView: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text("Codex 可执行文件")
                     Spacer()
+                    Button("自动查找") {
+                        draft.customCodexPath = ""
+                        codexPathText = Self.resolvedCodexPath(for: draft)
+                        testMessage = nil
+                    }
+                    .buttonStyle(AppActionButtonStyle())
                     Button {
                         chooseCodex()
                     } label: {
@@ -379,11 +385,7 @@ private struct SettingsView: View {
     }
 
     private var hasDraftChanges: Bool {
-        var candidate = draft.normalized
-        var current = store.settings.normalized
-        candidate.customCodexPath = Self.resolvedCodexPath(for: candidate)
-        current.customCodexPath = Self.resolvedCodexPath(for: current)
-        return candidate != current
+        draft.normalized != store.settings.normalized
     }
 
     private var hasAnyChanges: Bool {
@@ -503,13 +505,20 @@ private struct SettingsView: View {
 
     private func chooseCodex() {
         let panel = NSOpenPanel()
-        panel.canChooseDirectories = false
+        panel.canChooseDirectories = true
         panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK {
-            let selectedPath = panel.url?.path ?? draft.customCodexPath
-            draft.customCodexPath = selectedPath
-            codexPathText = selectedPath
+        panel.message = "选择 ChatGPT/Codex 应用、Codex CLI 可执行文件或其所在目录。"
+        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
+        if panel.runModal() == .OK, let selectedPath = panel.url?.path {
+            do {
+                let executable = try CodexExecutableResolver.resolve(customPath: selectedPath)
+                draft.customCodexPath = selectedPath
+                codexPathText = executable.path
+                testMessage = nil
+            } catch {
+                testMessage = error.localizedDescription
+            }
         }
     }
 
