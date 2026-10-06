@@ -95,7 +95,7 @@ Download `CodexQuotaPet-<version>-macos-universal.zip` from
 [GitHub Releases](https://github.com/HZGuoo/codex-quota-pet/releases/latest),
 unzip it, and move **Codex Quota Pet.app** to Applications.
 
-The current `v0.2.5` artifact is ad-hoc signed. Until a notarized release is
+Published artifacts currently use ad-hoc signing. Until a notarized release is
 published, macOS may require **Control-click → Open** on first launch. The
 repository now contains a Developer ID signing and notarization workflow for
 future releases; see [docs/RELEASING.md](docs/RELEASING.md).

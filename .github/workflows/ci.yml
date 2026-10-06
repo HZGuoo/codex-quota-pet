@@ -31,3 +31,6 @@ jobs:
 
       - name: Run self-tests
         run: swift run --disable-sandbox CodexQuotaPetSelfTests
+
+      - name: Verify notification authorization on a background queue
+        run: zsh Scripts/test-notification-authorization.sh

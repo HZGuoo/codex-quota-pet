@@ -17,7 +17,16 @@ final class TaskNotificationService: NSObject, UNUserNotificationCenterDelegate 
     }
 
     func requestAuthorizationIfNeeded() {
-        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        Task { [center] in
+            do {
+                // The system completes authorization on its own queue. The async
+                // API resumes this task safely instead of invoking an inherited
+                // MainActor-isolated completion handler from that queue.
+                _ = try await center.requestAuthorization(options: [.alert, .sound])
+            } catch {
+                NSLog("Notification authorization failed: %@", error.localizedDescription)
+            }
+        }
     }
 
     func deliver(_ event: CodexTaskEvent, privateContent: Bool) {

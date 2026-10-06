@@ -35,6 +35,11 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      - name: Verify application before packaging
+        run: |
+          swift run --disable-sandbox CodexQuotaPetSelfTests
+          zsh Scripts/test-notification-authorization.sh
+
       - name: Select release signing mode
         id: signing
         env:
